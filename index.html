@@ -45,6 +45,8 @@ table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}th,td{pa
 .seg{display:flex;gap:6px;margin-top:4px}.seg button{flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);font:inherit;cursor:pointer;transition:background .15s}.seg button:hover{background:var(--line)}.seg button[aria-pressed=true]{background:var(--ink);color:var(--onink);border-color:var(--ink);font-weight:600}
 .bar{height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin:6px 0}.bar i{display:block;height:100%;transition:width .3s}
 .btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+summary{cursor:pointer;color:var(--muted);font-size:13px;padding:10px 0 2px;user-select:none;width:fit-content}summary:hover{color:var(--text)}
+details:not([open]) .s-hide,details[open] .s-show{display:none}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -87,9 +89,9 @@ table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}th,td{pa
       <div class="grid" id="stats"></div>
       <div class="card"><h2>Spending by category</h2><div id="donut"></div></div>
       <div class="card"><h2>Budget</h2><div id="dashBudget"></div></div>
-      <div class="card"><h2>By account (selected month)</h2><div id="accChart"></div><div id="accTable"></div></div>
-      <div class="card"><h2>Day by day</h2><div id="dayChart"></div><div id="dayTable"></div></div>
-      <div class="card"><h2>Last 12 months</h2><div id="monthChart"></div><div id="monthTable"></div></div>
+      <div class="card"><h2>By account (selected month)</h2><div id="accChart"></div><details><summary><span class="s-show">▸ Show table</span><span class="s-hide">▾ Hide table</span></summary><div id="accTable"></div></details></div>
+      <div class="card"><h2>Day by day</h2><div id="dayChart"></div><details><summary><span class="s-show">▸ Show table</span><span class="s-hide">▾ Hide table</span></summary><div id="dayTable"></div></details></div>
+      <div class="card"><h2>Last 12 months</h2><div id="monthChart"></div><details><summary><span class="s-show">▸ Show table</span><span class="s-hide">▾ Hide table</span></summary><div id="monthTable"></div></details></div>
       <p class="muted">Refunds reduce the expense they're linked to. Transfers between your accounts are excluded from income and expenses.</p>
     </section>
 
