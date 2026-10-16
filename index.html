@@ -98,6 +98,12 @@ header{padding-top:env(safe-area-inset-top)}
   input,select{font-size:16px}.seg button{min-height:44px}.iconbtn.sm{width:40px;height:40px}.hide-m{display:none}
   .wrap{padding:14px 12px 56px}.card{padding:16px}h1{font-size:23px}th,td{padding:8px 6px}
   .toolbar{flex-direction:column}.toolbar .btn{width:100%}.legend{min-width:100%}
+  /* backdrop-filter makes the header the containing block for fixed children, which trapped the tab bar inside it */
+  header{-webkit-backdrop-filter:none;backdrop-filter:none;background:var(--bg)}
+  .seg{overflow-x:auto;scrollbar-width:none}.seg::-webkit-scrollbar{display:none}.seg button{white-space:nowrap;flex:1 0 auto}
+  .compact{font-size:0}.compact .seg button,.compact input{font-size:15px}
+  .fab{width:52px;height:52px;right:14px}.stat b{font-size:20px}
+  body.typing .tabs,body.typing .fab{display:none}
 }
 @media(max-width:699px){
   .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;margin:0;gap:0;justify-content:space-around;background:var(--pop);border-top:1px solid var(--line);padding:6px 6px calc(6px + env(safe-area-inset-bottom))}
@@ -148,9 +154,9 @@ header{padding-top:env(safe-area-inset-top)}
 
     <section id="dash">
       <h1>Overview</h1>
-      <div class="field" style="max-width:300px;margin-bottom:12px">View<div class="seg" id="periodSeg" role="group" aria-label="Dashboard period"><button type="button" data-v="month" aria-pressed="true">Monthly</button><button type="button" data-v="all" aria-pressed="false">All time</button></div></div>
-      <div id="monthWrap" style="display:flex;align-items:flex-end;gap:6px;margin-bottom:12px"><button type="button" class="btn ghost" id="prevM" aria-label="Previous month">◀</button><label style="flex:1;max-width:200px">Month<input id="month" type="month"></label><button type="button" class="btn ghost" id="nextM" aria-label="Next month">▶</button></div>
-      <div class="field" style="max-width:460px;margin-bottom:12px">Show account<div class="seg" id="accFilterDash" role="group" aria-label="Filter by account"></div></div>
+      <div class="field compact" style="max-width:300px;margin-bottom:10px">View<div class="seg" id="periodSeg" role="group" aria-label="Dashboard period"><button type="button" data-v="month" aria-pressed="true">Monthly</button><button type="button" data-v="all" aria-pressed="false">All time</button></div></div>
+      <div id="monthWrap" style="display:flex;align-items:flex-end;gap:6px;margin-bottom:12px"><button type="button" class="btn ghost" id="prevM" aria-label="Previous month">◀</button><label class="compact" style="flex:1;max-width:200px">Month<input id="month" type="month"></label><button type="button" class="btn ghost" id="nextM" aria-label="Next month">▶</button></div>
+      <div class="field compact" style="max-width:460px;margin-bottom:10px">Show account<div class="seg" id="accFilterDash" role="group" aria-label="Filter by account"></div></div>
       <div class="grid" id="balances"></div>
       <div class="grid" id="stats"></div>
       <p class="muted" style="margin-top:-4px">Transfers between your accounts change balances but are not income or expenses, so they never appear in the Income, Expenses or Net savings cards.</p>
@@ -210,9 +216,9 @@ header{padding-top:env(safe-area-inset-top)}
         <button class="btn span" id="txSubmit">Add transaction</button>
         <button type="button" class="btn ghost span" id="cancelEdit" hidden>Cancel</button>
       </form>
-      <div class="field" style="margin-bottom:12px">Type<div class="seg" id="typeFilter" role="group" aria-label="Filter by type"></div></div>
-      <div class="field" style="margin-bottom:12px">Period<div class="seg" id="rangeFilter" role="group" aria-label="Filter by period"></div></div>
-      <div class="field" style="max-width:460px;margin-bottom:12px">Show account<div class="seg" id="accFilterTx" role="group" aria-label="Filter by account"></div></div>
+      <div class="field compact" style="margin-bottom:10px">Type<div class="seg" id="typeFilter" role="group" aria-label="Filter by type"></div></div>
+      <div class="field compact" style="margin-bottom:10px">Period<div class="seg" id="rangeFilter" role="group" aria-label="Filter by period"></div></div>
+      <div class="field compact" style="max-width:460px;margin-bottom:10px">Show account<div class="seg" id="accFilterTx" role="group" aria-label="Filter by account"></div></div>
       <div class="toolbar">
         <input id="q" type="search" placeholder="Search merchant, notes or category" aria-label="Search transactions">
         <button class="btn" id="export" type="button">Export CSV</button>
@@ -506,6 +512,10 @@ addEventListener("appinstalled", () => { $("#installBtn").hidden = true; });
 $("#installBtn").addEventListener("click", async () => { if (!deferredInstall) return; deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; $("#installBtn").hidden = true; });
 if (/iphone|ipad/i.test(navigator.userAgent) && !navigator.standalone) $("#iosHint").hidden = false;
 let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (loaded) renderDash(); }, 200); });
+
+/* While typing on a phone, hide the bottom bar and + button so the keyboard doesn't push them over the form. */
+addEventListener("focusin", e => { if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) document.body.classList.add("typing"); });
+addEventListener("focusout", () => document.body.classList.remove("typing"));
 
 /* Keyboard shortcuts: N new transaction, / search, 1-4 switch page. */
 document.addEventListener("keydown", e => {
