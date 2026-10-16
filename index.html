@@ -43,6 +43,8 @@ table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}th,td{pa
 #toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);background:var(--ink);color:var(--onink);padding:12px 18px;border-radius:12px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.2);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:20;max-width:90vw}
 #toast.show{opacity:1;transform:translate(-50%,0)}
 .seg{display:flex;gap:6px;margin-top:4px}.seg button{flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);font:inherit;cursor:pointer;transition:background .15s}.seg button:hover{background:var(--line)}.seg button[aria-pressed=true]{background:var(--ink);color:var(--onink);border-color:var(--ink);font-weight:600}
+.bar{height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin:6px 0}.bar i{display:block;height:100%;transition:width .3s}
+.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -69,6 +71,7 @@ table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}th,td{pa
     <span class="brand">Ledger</span>
     <button class="tab" data-tab="dash" aria-current="page">Dashboard</button>
     <button class="tab" data-tab="tx">Transactions</button>
+    <button class="tab" data-tab="budgets">Budgets</button>
     <button class="tab" data-tab="cats">Categories</button>
     <button class="tab" id="theme" aria-label="Toggle dark mode">Theme</button>
     <button class="tab" id="logout">Log out</button>
@@ -83,10 +86,26 @@ table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}th,td{pa
       <div class="field" style="max-width:460px;margin-bottom:12px">Show account<div class="seg" id="accFilterDash" role="group" aria-label="Filter by account"></div></div>
       <div class="grid" id="stats"></div>
       <div class="card"><h2>Spending by category</h2><div id="donut"></div></div>
+      <div class="card"><h2>Budget</h2><div id="dashBudget"></div></div>
       <div class="card"><h2>By account (selected month)</h2><div id="accChart"></div><div id="accTable"></div></div>
       <div class="card"><h2>Day by day</h2><div id="dayChart"></div><div id="dayTable"></div></div>
       <div class="card"><h2>Last 12 months</h2><div id="monthChart"></div><div id="monthTable"></div></div>
       <p class="muted">Refunds reduce the expense they're linked to. Transfers between your accounts are excluded from income and expenses.</p>
+    </section>
+
+    <section id="budgets" hidden>
+      <h1>Budgets</h1>
+      <label style="max-width:200px;margin-bottom:12px">Month<input id="bMonth" type="month"></label>
+      <div class="card"><h2>Progress</h2><div id="bProgress"></div></div>
+      <form id="bForm" class="card" novalidate>
+        <h2>Set limits for this month</h2>
+        <label style="max-width:260px;margin-bottom:12px">Overall monthly budget (₹)<input id="bOverall" inputmode="decimal" placeholder="No limit" autocomplete="off"></label>
+        <div class="form" id="bCats"></div>
+        <label style="margin:14px 0"><input type="checkbox" id="bCarry" style="display:inline;width:auto;margin:0 6px 0 0">Use these limits for the following months until I set new ones</label>
+        <p id="bErr" class="err" role="alert"></p>
+        <button class="btn">Save budget</button>
+      </form>
+      <p class="muted">Budgets count actual expenses (net of refunds). Transfers between your own accounts are never counted. Each month can have its own limits.</p>
     </section>
 
     <section id="cats" hidden>
@@ -114,7 +133,9 @@ table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}th,td{pa
         <label id="refWrap" class="span" hidden>Refund of (optional)<select name="refundOf" id="fRef"></select></label>
         <label class="span">Notes<input name="notes" autocomplete="off"></label>
         <p id="txErr" class="err span" role="alert"></p>
-        <button class="btn span">Add transaction</button>
+        <p id="editNote" class="warn span" hidden>You are editing a transaction. Save your changes or cancel.</p>
+        <button class="btn span" id="txSubmit">Add transaction</button>
+        <button type="button" class="btn ghost span" id="cancelEdit" hidden>Cancel</button>
       </form>
       <div class="field" style="max-width:460px;margin-bottom:12px">Show account<div class="seg" id="accFilterTx" role="group" aria-label="Filter by account"></div></div>
       <div class="toolbar">
@@ -199,7 +220,7 @@ function renderDash() {
   const ym = $("#month").value; if (!ym) return;
   const cur = summarize(inMonth(ym)), [y, m] = ym.split("-").map(Number), pd = new Date(y, m - 2, 1);
   const prev = summarize(inMonth(`${pd.getFullYear()}-${pad(pd.getMonth() + 1)}`));
-  renderTrends(ym, cur); renderAccounts(ym);
+  renderTrends(ym, cur); renderAccounts(ym); renderDashBudget(ym);
   const delta = prev.exp > 0 ? (cur.exp - prev.exp) / prev.exp * 100 : null;
   $("#stats").innerHTML = [
     ["Income", inr(cur.inc), "inc", `${cur.n} transactions`],
@@ -226,11 +247,11 @@ function renderList() {
     const title = t.merchant || (t.type === "transfer" ? "Transfer" : CAT[t.categoryId] || "Uncategorized");
     const sub = t.type === "transfer" ? `${ACC[t.accountId] || "?"} → ${ACC[t.toAccountId] || "?"}` : `${CAT[t.categoryId] || ""} · ${ACC[t.accountId] || ""}`;
     const cls = t.type === "income" ? "inc" : t.type === "expense" ? "exp" : "", sign = t.type === "income" ? "+" : t.type === "expense" ? "−" : "";
-    return head + `<li><div class="main"><div><b>${esc(title)}</b></div><div class="muted">${esc(t.date)} · ${esc(sub)}</div></div><b class="num ${cls}">${sign}${inr(t.amountMinor)}</b><button class="link" data-del="${esc(t.id)}" aria-label="Delete transaction">Delete</button></li>`;
+    return head + `<li><div class="main"><div><b>${esc(title)}</b></div><div class="muted">${esc(t.date)} · ${esc(sub)}</div></div><b class="num ${cls}">${sign}${inr(t.amountMinor)}</b><button class="link" data-edit="${esc(t.id)}">Edit</button><button class="link" data-del="${esc(t.id)}" aria-label="Delete transaction">Delete</button></li>`;
   }).join("");
   $("#more").hidden = rows.length <= limit;
 }
-const renderAll = () => { renderSync(); renderCats(); renderDash(); renderList(); syncRefundOptions(); };
+const renderAll = () => { renderSync(); renderCats(); renderBudgets(); renderDash(); renderList(); syncRefundOptions(); };
 
 /* ---------- form ---------- */
 const opts = (arr, sel) => arr.map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join("");
@@ -239,7 +260,7 @@ function syncForm() {
   $("#catWrap").hidden = isT; $("#toWrap").hidden = !isT; $("#accLbl").textContent = isT ? "From account" : "Account";
   if (!isT) {
     const keep = want || $("#fCat").value;
-    $("#fCat").innerHTML = `<option value="">Select…</option>` + opts(CATS.filter(c => c.kind === type && !c.archived)) + `<option value="__new">+ New category…</option>`;
+    $("#fCat").innerHTML = `<option value="">Select…</option>` + opts(CATS.filter(c => c.kind === type && (!c.archived || c.id === want))) + `<option value="__new">+ New category…</option>`;
     if ([...$("#fCat").options].some(o => o.value === keep)) { $("#fCat").value = keep; if (keep === want) want = ""; }
   }
   syncRefundOptions();
@@ -264,7 +285,7 @@ $("#txForm").addEventListener("submit", async e => {
   if (fd.type === "transfer") { if (!fd.toAccount) errs.push("Choose a destination account."); else if (fd.toAccount === fd.account) errs.push("Source and destination accounts must differ."); }
   else if (!fd.category) errs.push("Choose a category.");
   $("#txErr").textContent = errs.join(" "); if (errs.length) return;
-  const now = Date.now(), t = { id: crypto.randomUUID(), type: fd.type, amountMinor: amt, date: fd.date, accountId: fd.account, status: "posted", createdAt: now, updatedAt: now, version: 1 };
+  const now = Date.now(), t = { id: editing ? editing.id : crypto.randomUUID(), type: fd.type, amountMinor: amt, date: fd.date, accountId: fd.account, status: "posted", createdAt: editing ? editing.createdAt : now, updatedAt: now, version: editing ? editing.version + 1 : 1 };
   if (fd.type === "transfer") t.toAccountId = fd.toAccount; else { t.categoryId = fd.category; if (fd.type === "income" && fd.refundOf) t.refundOfId = fd.refundOf; }
   if (fd.merchant.trim()) t.merchant = fd.merchant.trim().slice(0, 120);
   if (fd.notes.trim()) t.notes = fd.notes.trim().slice(0, 500);
@@ -272,15 +293,16 @@ $("#txForm").addEventListener("submit", async e => {
   // Offline writes only resolve once the server acknowledges them, so wait briefly instead of forever; the entry is already saved locally.
   const ok = await Promise.race([save(t), new Promise(r => setTimeout(r, 800, "pending"))]);
   if (ok === false) return; // the error message is already showing and the form keeps your input
-  form.amount.value = ""; form.merchant.value = ""; form.notes.value = "";
-  toast("Transaction recorded successfully");
+  toast(editing ? "Transaction updated successfully" : "Transaction recorded successfully");
+  if (editing) endEdit(); else { form.amount.value = ""; form.merchant.value = ""; form.notes.value = ""; }
 });
 $("#q").addEventListener("input", () => { limit = 50; renderList(); });
 $("#more").addEventListener("click", () => { limit += 50; renderList(); });
 $("#month").addEventListener("input", renderDash);
 $("#list").addEventListener("click", e => {
-  const id = e.target.dataset?.del; if (!id) return;
+  const id = e.target.dataset?.del || e.target.dataset?.edit; if (!id) return;
   const t = txs.find(x => x.id === id);
+  if (t && e.target.dataset.edit) return startEdit(t);
   if (t && confirm("Delete this transaction?")) { const now = Date.now(); save({ ...t, deletedAt: now, updatedAt: now, version: t.version + 1 }); }
 });
 $("#export").addEventListener("click", () => {
@@ -348,7 +370,7 @@ function renderTrends(ym, cur) {
 /* ---------- tabs, theme ---------- */
 document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll("[data-tab]").forEach(x => x.removeAttribute("aria-current")); b.setAttribute("aria-current", "page");
-  $("#dash").hidden = b.dataset.tab !== "dash"; $("#tx").hidden = b.dataset.tab !== "tx"; $("#cats").hidden = b.dataset.tab !== "cats";
+  $("#dash").hidden = b.dataset.tab !== "dash"; $("#tx").hidden = b.dataset.tab !== "tx"; $("#cats").hidden = b.dataset.tab !== "cats"; $("#budgets").hidden = b.dataset.tab !== "budgets";
 }));
 const setTheme = t => { document.documentElement.dataset.theme = t; try { localStorage.setItem("theme", t); } catch {} };
 try { const s = localStorage.getItem("theme"); document.documentElement.dataset.theme = s || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); } catch {}
@@ -378,10 +400,12 @@ $("#googleBtn").addEventListener("click", () => configured && authRun(() => sign
 $("#logout").addEventListener("click", () => signOut(auth));
 
 /* Button group that writes its choice into a hidden input (so FormData and the rest of the code are unchanged). Returns a setter. */
+const setters = {};
 function seg(box, hidden, items, onPick) {
   const el = $(box), h = $(hidden);
   el.innerHTML = items.map(i => `<button type="button" data-v="${esc(i.id)}" aria-pressed="false">${esc(i.name)}</button>`).join("");
   const set = v => { h.value = v; el.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === v))); };
+  setters[hidden] = set;
   el.onclick = e => { const b = e.target.closest("button"); if (b) { set(b.dataset.v); if (onPick) onPick(); } };
   return set;
 }
@@ -403,8 +427,67 @@ function renderAccounts(ym) {
   $("#accTable").innerHTML = table(["Account", "Income", "Expenses", "Net", "Transfers", "Balance"], rows.map(r => [r.name, inr(r.inc), inr(r.exp), inr(r.net), inr(r.tr), inr(r.bal)])) +
     `<p class="muted">Balance counts all income, expenses and transfers ever recorded (opening balances aren't set yet). Transfers are shown separately and are never income or expenses.</p>`;
 }
+/* ---------- edit transaction ---------- */
+let editing = null;
+function startEdit(t) {
+  editing = t; const f = $("#txForm");
+  want = t.type === "transfer" ? "" : (t.categoryId || "");
+  setters["#fType"](t.type); setters["#fAcc"](t.accountId); setters["#fTo"](t.toAccountId || ""); syncForm();
+  f.amount.value = (t.amountMinor / 100).toFixed(2); f.date.value = t.date; f.merchant.value = t.merchant || ""; f.notes.value = t.notes || "";
+  $("#fRef").value = t.refundOfId || "";
+  $("#txSubmit").textContent = "Save changes"; $("#cancelEdit").hidden = false; $("#editNote").hidden = false; $("#txErr").textContent = "";
+  f.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function endEdit() {
+  editing = null; const f = $("#txForm");
+  f.amount.value = ""; f.merchant.value = ""; f.notes.value = ""; f.date.value = todayStr();
+  $("#txSubmit").textContent = "Add transaction"; $("#cancelEdit").hidden = true; $("#editNote").hidden = true; $("#txErr").textContent = "";
+}
+$("#cancelEdit").addEventListener("click", endEdit);
+
+/* ---------- monthly budgets ---------- */
+let budgets = [];
+/* A month's own budget wins. Otherwise use the latest earlier budget, but only if it was explicitly saved with "carry forward". */
+function budgetFor(ym) {
+  const own = budgets.find(b => b.id === ym); if (own) return { b: own, from: ym };
+  const prior = budgets.filter(b => b.id < ym && b.carryForward).sort((a, c) => c.id.localeCompare(a.id))[0];
+  return prior ? { b: prior, from: prior.id } : null;
+}
+function progRow(name, used, limit) {
+  const pct = used / limit * 100, lvl = pct >= 100 ? 3 : pct >= 90 ? 2 : pct >= 75 ? 1 : 0, col = ["var(--inc)", "var(--warn)", "var(--warn)", "var(--exp)"][lvl];
+  const msg = pct > 100 ? `Over budget by ${inr(used - limit)}` : pct === 100 ? "Budget fully used" : lvl === 2 ? "Over 90% used, nearly at the limit" : lvl === 1 ? "75% of the budget has been used" : `${inr(limit - used)} left`;
+  return `<div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;gap:8px"><b>${esc(name)}</b><span class="num">${inr(used)} of ${inr(limit)}</span></div><div class="bar" role="progressbar" aria-label="${esc(name)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(100, Math.round(pct))}"><i style="width:${Math.min(100, pct)}%;background:${col}"></i></div><div class="muted"${lvl ? ` style="color:${col}"` : ""}>${msg} · ${pct.toFixed(0)}% used</div></div>`;
+}
+function budgetRows(ym, overallOnly) {
+  const r = budgetFor(ym); if (!r) return "";
+  const L = live().filter(t => t.date.startsWith(ym)), used = new Map(byCat(L)), rows = [];
+  if (r.b.overallMinor) rows.push(progRow("Overall monthly budget", summarize(L).exp, r.b.overallMinor));
+  if (!overallOnly) for (const [id, lim] of Object.entries(r.b.categoryMinor || {})) rows.push(progRow(CAT[id] || "Uncategorized", used.get(id) || 0, lim));
+  return rows.join("") + (rows.length && r.from !== ym ? `<p class="muted">Carried forward from ${esc(r.from)}.</p>` : "");
+}
+function renderDashBudget(ym) { $("#dashBudget").innerHTML = budgetRows(ym, true) || `<p class="muted">No overall budget set for this month. Set one under Budgets.</p>`; }
+function renderBudgets() {
+  const ym = $("#bMonth").value || todayStr().slice(0, 7);
+  $("#bProgress").innerHTML = budgetRows(ym) || `<p class="muted">No budget set for this month yet. Add limits below.</p>`;
+  if ($("#bForm").contains(document.activeElement)) return; // don't wipe what the user is typing
+  const r = budgetFor(ym), b = r ? r.b : {}, cm = b.categoryMinor || {}, f = n => n ? (n / 100).toFixed(2) : "";
+  $("#bOverall").value = f(b.overallMinor); $("#bCarry").checked = !!b.carryForward;
+  $("#bCats").innerHTML = CATS.filter(c => c.kind === "expense" && (!c.archived || cm[c.id])).map(c => `<label>${esc(c.name)}<input data-cat="${esc(c.id)}" inputmode="decimal" placeholder="No limit" autocomplete="off" value="${f(cm[c.id])}"></label>`).join("");
+}
+$("#bMonth").addEventListener("input", renderBudgets);
+$("#bForm").addEventListener("submit", async e => {
+  e.preventDefault(); const ym = $("#bMonth").value; if (!ym) return;
+  const errs = [], opt = v => v.trim() ? parseAmt(v) : null, ovRaw = $("#bOverall").value, ov = opt(ovRaw), cm = {};
+  if (ovRaw.trim() && !ov) errs.push("Overall budget must be an amount greater than zero.");
+  $("#bForm").querySelectorAll("[data-cat]").forEach(i => { const v = opt(i.value); if (i.value.trim() && !v) errs.push(`Enter a valid amount for ${CAT[i.dataset.cat]}.`); else if (v) cm[i.dataset.cat] = v; });
+  $("#bErr").textContent = errs.join(" "); if (errs.length) return;
+  const b = { id: ym, month: ym, categoryMinor: cm, carryForward: $("#bCarry").checked, updatedAt: Date.now() }; if (ov) b.overallMinor = ov;
+  const ok = await Promise.race([setDoc(doc(db, "users", user.uid, "budgets", ym), b).then(() => true).catch(err => { $("#bErr").textContent = err.code === "permission-denied" ? "Permission denied. Check your Firestore rules." : "Could not save: " + err.message; return false; }), new Promise(r => setTimeout(r, 800, "pending"))]);
+  if (ok !== false) toast("Budget saved successfully");
+});
+
 function start() {
-  $("#fDate").value = todayStr(); $("#month").value = todayStr().slice(0, 7);
+  $("#fDate").value = todayStr(); $("#month").value = todayStr().slice(0, 7); $("#bMonth").value = todayStr().slice(0, 7);
   seg("#segType", "#fType", [{ id: "expense", name: "Expense" }, { id: "income", name: "Income" }, { id: "transfer", name: "Transfer" }], syncForm)("expense");
   seg("#segAcc", "#fAcc", ACCS)(ACCS[0].id); seg("#segTo", "#fTo", ACCS); syncForm(); renderAccFilters();
   if (!configured) { $("#auth").hidden = false; $("#setup").hidden = false; $("#authBtn").disabled = true; return; }
@@ -412,13 +495,14 @@ function start() {
   try { db = initializeFirestore(app, { ignoreUndefinedProperties: true, localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
   catch { db = initializeFirestore(app, { ignoreUndefinedProperties: true }); } // offline cache unsupported in this browser
   onAuthStateChanged(auth, u => {
-    user = u; if (unsub) { unsub(); unsub = null; } txs = []; custom = []; rebuildCats();
+    user = u; if (unsub) { unsub(); unsub = null; } txs = []; custom = []; budgets = []; rebuildCats();
     $("#auth").hidden = !!u; $("#app").hidden = !u; if (!u) return;
     const u1 = onSnapshot(collection(db, "users", u.uid, "transactions"), { includeMetadataChanges: true }, snap => {
       txs = snap.docs.map(d => d.data()); pendingCount = snap.docs.filter(d => d.metadata.hasPendingWrites).length; fromCache = snap.metadata.fromCache; renderAll();
     }, err => { $("#sync").textContent = err.code === "permission-denied" ? "Permission denied. Publish the Firestore rules from the setup guide." : "Sync error: " + err.message; });
     const u2 = onSnapshot(collection(db, "users", u.uid, "categories"), snap => { custom = snap.docs.map(d => d.data()); rebuildCats(); syncForm(); renderAll(); }, () => {});
-    unsub = () => { u1(); u2(); };
+    const u3 = onSnapshot(collection(db, "users", u.uid, "budgets"), snap => { budgets = snap.docs.map(d => d.data()); renderAll(); }, () => {});
+    unsub = () => { u1(); u2(); u3(); };
   });
 }
 setMode("login"); start();
