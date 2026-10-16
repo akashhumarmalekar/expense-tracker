@@ -47,6 +47,7 @@ table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}th,td{pa
 .btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
 summary{cursor:pointer;color:var(--muted);font-size:13px;padding:10px 0 2px;user-select:none;width:fit-content}summary:hover{color:var(--text)}
 details:not([open]) .s-hide,details[open] .s-show{display:none}
+#quickCats{flex-wrap:wrap}#quickCats button{flex:0 0 auto}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -84,14 +85,20 @@ details:not([open]) .s-hide,details[open] .s-show{display:none}
 
     <section id="dash">
       <h1>Overview</h1>
-      <label style="max-width:200px;margin-bottom:12px">Month<input id="month" type="month"></label>
+      <div class="field" style="max-width:300px;margin-bottom:12px">View<div class="seg" id="periodSeg" role="group" aria-label="Dashboard period"><button type="button" data-v="month" aria-pressed="true">Monthly</button><button type="button" data-v="all" aria-pressed="false">All time</button></div></div>
+      <div id="monthWrap" style="display:flex;align-items:flex-end;gap:6px;margin-bottom:12px"><button type="button" class="btn ghost" id="prevM" aria-label="Previous month">◀</button><label style="flex:1;max-width:200px">Month<input id="month" type="month"></label><button type="button" class="btn ghost" id="nextM" aria-label="Next month">▶</button></div>
       <div class="field" style="max-width:460px;margin-bottom:12px">Show account<div class="seg" id="accFilterDash" role="group" aria-label="Filter by account"></div></div>
+      <div class="grid" id="balances"></div>
       <div class="grid" id="stats"></div>
+      <p class="muted" style="margin-top:-4px">Transfers between your accounts change balances but are not income or expenses, so they never appear in the Income, Expenses or Net savings cards.</p>
       <div class="card"><h2>Spending by category</h2><div id="donut"></div></div>
       <div class="card"><h2>Budget</h2><div id="dashBudget"></div></div>
-      <div class="card"><h2>By account (selected month)</h2><div id="accChart"></div><details><summary><span class="s-show">▸ Show table</span><span class="s-hide">▾ Hide table</span></summary><div id="accTable"></div></details></div>
-      <div class="card"><h2>Day by day</h2><div id="dayChart"></div><details><summary><span class="s-show">▸ Show table</span><span class="s-hide">▾ Hide table</span></summary><div id="dayTable"></div></details></div>
-      <div class="card"><h2>Last 12 months</h2><div id="monthChart"></div><details><summary><span class="s-show">▸ Show table</span><span class="s-hide">▾ Hide table</span></summary><div id="monthTable"></div></details></div>
+      <div class="card"><h2>By account</h2><div id="accChart"></div><details><summary><span class="s-show">▸ Show table</span><span class="s-hide">▾ Hide table</span></summary><div id="accTable"></div></details></div>
+      <div class="card" id="dayCard"><h2>Day by day</h2><div id="dayChart"></div><details><summary><span class="s-show">▸ Show table</span><span class="s-hide">▾ Hide table</span></summary><div id="dayTable"></div></details></div>
+      <div class="card"><h2 id="monthTitle">Last 12 months</h2><div id="monthChart"></div><details><summary><span class="s-show">▸ Show table</span><span class="s-hide">▾ Hide table</span></summary><div id="monthTable"></div></details></div>
+      <div class="card"><h2>Share a summary image</h2>
+        <div class="toolbar" style="flex-wrap:wrap;align-items:flex-end"><label>Day<input type="date" id="shareDay"></label><button class="btn" id="shareDayBtn" type="button">Daily summary image</button><button class="btn" id="shareMonthBtn" type="button">Monthly summary image</button></div>
+        <p class="muted">On a phone this opens the share sheet, where you can pick WhatsApp. On a computer the image downloads as a PNG. Images include all accounts; the monthly one uses the month chosen above.</p></div>
       <p class="muted">Refunds reduce the expense they're linked to. Transfers between your accounts are excluded from income and expenses.</p>
     </section>
 
@@ -131,6 +138,7 @@ details:not([open]) .s-hide,details[open] .s-show{display:none}
         <div class="field"><span id="accLbl">Account</span><input type="hidden" name="account" id="fAcc"><div class="seg" id="segAcc" role="group" aria-label="Account"></div></div>
         <label id="catWrap">Category<select name="category" id="fCat"></select></label>
         <div class="field" id="toWrap" hidden>To account<input type="hidden" name="toAccount" id="fTo"><div class="seg" id="segTo" role="group" aria-label="To account"></div></div>
+        <div class="field span" id="quickWrap" hidden>Frequent categories (used in the last 30 days)<div class="seg" id="quickCats" role="group" aria-label="Frequent categories"></div></div>
         <label>Merchant or source<input name="merchant" autocomplete="off"></label>
         <label id="refWrap" class="span" hidden>Refund of (optional)<select name="refundOf" id="fRef"></select></label>
         <label class="span">Notes<input name="notes" autocomplete="off"></label>
@@ -186,7 +194,7 @@ const inr = m => (m < 0 ? "-" : "") + "₹" + (Math.abs(m) / 100).toLocaleString
 
 let txs = [], pendingCount = 0, fromCache = true, limit = 50, user = null, unsub = null, mode = "login", db = null, auth = null;
 const live = () => txs.filter(t => t.status === "posted" && !t.deletedAt);
-let viewAcc = "";
+let viewAcc = "", period = "month";
 const inView = t => !viewAcc || t.accountId === viewAcc || (t.type === "transfer" && t.toAccountId === viewAcc);
 const inMonth = ym => live().filter(t => t.date.startsWith(ym) && inView(t));
 
@@ -220,17 +228,17 @@ function renderSync() {
 }
 function renderDash() {
   const ym = $("#month").value; if (!ym) return;
-  const cur = summarize(inMonth(ym)), [y, m] = ym.split("-").map(Number), pd = new Date(y, m - 2, 1);
+  const all = period === "all", scoped = all ? live().filter(inView) : inMonth(ym), cur = summarize(scoped), [y, m] = ym.split("-").map(Number), pd = new Date(y, m - 2, 1);
   const prev = summarize(inMonth(`${pd.getFullYear()}-${pad(pd.getMonth() + 1)}`));
-  renderTrends(ym, cur); renderAccounts(ym); renderDashBudget(ym);
+  renderTrends(ym, cur, all); renderAccounts(all ? "" : ym); renderDashBudget(ym);
   const delta = prev.exp > 0 ? (cur.exp - prev.exp) / prev.exp * 100 : null;
   $("#stats").innerHTML = [
     ["Income", inr(cur.inc), "inc", `${cur.n} transactions`],
-    ["Expenses", inr(cur.exp), "exp", delta === null ? "No prior month to compare" : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}% vs last month`],
+    ["Expenses", inr(cur.exp), "exp", all ? "All months combined" : delta === null ? "No prior month to compare" : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}% vs last month`],
     ["Net savings", inr(cur.net), cur.net < 0 ? "exp" : "", "Income − expenses"],
     ["Savings rate", cur.rate === null ? "n/a" : cur.rate.toFixed(1) + "%", "", cur.rate === null ? "No income this month" : "Of income saved"],
   ].map(([l, v, c, sub]) => `<div class="stat"><small>${l}</small><b class="num ${c}">${esc(v)}</b><small>${esc(sub)}</small></div>`).join("");
-  const cats = byCat(inMonth(ym)), total = cats.reduce((a, [, v]) => a + v, 0);
+  const cats = byCat(scoped), total = cats.reduce((a, [, v]) => a + v, 0);
   if (!total) { $("#donut").innerHTML = `<p class="muted">No expenses this month. Add one under Transactions to see your breakdown.</p>`; return; }
   const C = 2 * Math.PI * 40; let off = 0;
   const arcs = cats.map(([, v], i) => { const len = v / total * C; const s = `<circle cx="50" cy="50" r="40" fill="none" stroke="${COLORS[i % 8]}" stroke-width="16" stroke-dasharray="${len} ${C - len}" stroke-dashoffset="${-off}" transform="rotate(-90 50 50)"/>`; off += len; return s; }).join("");
@@ -268,6 +276,7 @@ function syncForm() {
   syncRefundOptions();
 }
 function syncRefundOptions() {
+  renderQuick();
   const show = $("#fType").value === "income" && $("#fCat").value === "inc-refunds"; $("#refWrap").hidden = !show; if (!show) return;
   const cur = $("#fRef").value;
   $("#fRef").innerHTML = `<option value="">Not linked to an expense</option>` + sorted().filter(t => t.type === "expense").slice(0, 50)
@@ -357,15 +366,19 @@ function barChart(labels, inc, exp, every = 1) {
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Income and expenses bar chart">${g}</svg><div class="muted"><span class="inc">■</span> Income &nbsp; <span class="exp">■</span> Expenses</div>`;
 }
 const table = (head, rows) => rows.length ? `<div style="overflow-x:auto"><table><thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td class="num">${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : `<p class="muted">No activity in this period.</p>`;
-function renderTrends(ym, cur) {
+function renderTrends(ym, cur, all) {
+  $("#dayCard").hidden = all; $("#monthTitle").textContent = all ? "All months" : "Last 12 months";
   const [y, m] = ym.split("-").map(Number), days = new Date(y, m, 0).getDate(), g = {};
   inMonth(ym).forEach(t => (g[t.date] ||= []).push(t));
   const d = Array.from({ length: days }, (_, i) => { const date = `${ym}-${pad(i + 1)}`; return { date, ...summarize(g[date] || []) }; });
   const elapsed = ym === todayStr().slice(0, 7) ? new Date().getDate() : days;
   $("#dayChart").innerHTML = barChart(d.map((_, i) => String(i + 1)), d.map(x => x.inc), d.map(x => x.exp), 2) + `<p class="muted">Average daily spend this month: <b class="num">${inr(Math.round(cur.exp / elapsed))}</b></p>`;
   $("#dayTable").innerHTML = table(["Day", "Income", "Expenses", "Net"], d.filter(x => x.n).reverse().map(x => [new Date(x.date + "T00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" }), inr(x.inc), inr(x.exp), inr(x.net)]));
-  const mo = Array.from({ length: 12 }, (_, i) => { const dt = new Date(y, m - 12 + i, 1); return { label: dt.toLocaleString("en-IN", { month: "short" }) + " " + String(dt.getFullYear()).slice(2), ...summarize(inMonth(`${dt.getFullYear()}-${pad(dt.getMonth() + 1)}`)) }; });
-  $("#monthChart").innerHTML = barChart(mo.map(x => x.label), mo.map(x => x.inc), mo.map(x => x.exp));
+  const firstYm = all && live().filter(inView).map(t => t.date.slice(0, 7)).sort()[0], now = new Date();
+  let base = new Date(y, m - 12, 1), n = 12;
+  if (firstYm) { const [fy, fm] = firstYm.split("-").map(Number); base = new Date(fy, fm - 1, 1); n = Math.max(1, (now.getFullYear() - fy) * 12 + now.getMonth() - fm + 2); }
+  const mo = Array.from({ length: n }, (_, i) => { const dt = new Date(base.getFullYear(), base.getMonth() + i, 1); return { label: dt.toLocaleString("en-IN", { month: "short" }) + " " + String(dt.getFullYear()).slice(2), ...summarize(inMonth(`${dt.getFullYear()}-${pad(dt.getMonth() + 1)}`)) }; });
+  $("#monthChart").innerHTML = barChart(mo.map(x => x.label), mo.map(x => x.inc), mo.map(x => x.exp), Math.ceil(mo.length / 12));
   $("#monthTable").innerHTML = table(["Month", "Income", "Expenses", "Net", "Saved"], mo.filter(x => x.n).reverse().map(x => [x.label, inr(x.inc), inr(x.exp), inr(x.net), x.rate === null ? "n/a" : x.rate.toFixed(0) + "%"]));
 }
 
@@ -425,6 +438,7 @@ function renderAccounts(ym) {
     const bal = L.reduce((n, t) => n + (t.accountId === a.id ? (t.type === "income" ? t.amountMinor : t.type === "expense" ? -t.amountMinor : 0) : 0) + move(t), 0);
     return { name: a.name, ...s, tr: L.filter(t => t.date.startsWith(ym)).reduce((n, t) => n + move(t), 0), bal };
   });
+  $("#balances").innerHTML = rows.map(r => `<div class="stat"><small>${esc(r.name)} balance</small><b class="num ${r.bal < 0 ? "exp" : ""}">${inr(r.bal)}</b><small>Income − expenses ± transfers</small></div>`).join("");
   $("#accChart").innerHTML = barChart(rows.map(r => r.name), rows.map(r => r.inc), rows.map(r => r.exp));
   $("#accTable").innerHTML = table(["Account", "Income", "Expenses", "Net", "Transfers", "Balance"], rows.map(r => [r.name, inr(r.inc), inr(r.exp), inr(r.net), inr(r.tr), inr(r.bal)])) +
     `<p class="muted">Balance counts all income, expenses and transfers ever recorded (opening balances aren't set yet). Transfers are shown separately and are never income or expenses.</p>`;
@@ -467,7 +481,7 @@ function budgetRows(ym, overallOnly) {
   if (!overallOnly) for (const [id, lim] of Object.entries(r.b.categoryMinor || {})) rows.push(progRow(CAT[id] || "Uncategorized", used.get(id) || 0, lim));
   return rows.join("") + (rows.length && r.from !== ym ? `<p class="muted">Carried forward from ${esc(r.from)}.</p>` : "");
 }
-function renderDashBudget(ym) { $("#dashBudget").innerHTML = budgetRows(ym, true) || `<p class="muted">No overall budget set for this month. Set one under Budgets.</p>`; }
+function renderDashBudget(ym) { if (period === "all") { $("#dashBudget").innerHTML = `<p class="muted">Budgets are set per month. Switch to Monthly to see them.</p>`; return; } $("#dashBudget").innerHTML = budgetRows(ym, true) || `<p class="muted">No overall budget set for this month. Set one under Budgets.</p>`; }
 function renderBudgets() {
   const ym = $("#bMonth").value || todayStr().slice(0, 7);
   $("#bProgress").innerHTML = budgetRows(ym) || `<p class="muted">No budget set for this month yet. Add limits below.</p>`;
@@ -488,8 +502,78 @@ $("#bForm").addEventListener("submit", async e => {
   if (ok !== false) toast("Budget saved successfully");
 });
 
+/* ---------- dashboard period ---------- */
+$("#periodSeg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return; period = b.dataset.v;
+  document.querySelectorAll("#periodSeg button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  $("#monthWrap").hidden = period === "all"; renderDash();
+});
+const shiftMonth = d => { const [y, m] = $("#month").value.split("-").map(Number); if (!y) return; const dt = new Date(y, m - 1 + d, 1); $("#month").value = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}`; renderDash(); };
+$("#prevM").addEventListener("click", () => shiftMonth(-1)); $("#nextM").addEventListener("click", () => shiftMonth(1));
+
+/* ---------- frequent category buttons ----------
+   Shown when a category has been used 2+ times and at least once in the last 30 days; it disappears on its own after 30 unused days. */
+function renderQuick() {
+  const kind = $("#fType").value, cut = new Date(); cut.setDate(cut.getDate() - 30);
+  const min = `${cut.getFullYear()}-${pad(cut.getMonth() + 1)}-${pad(cut.getDate())}`, st = {};
+  if (kind !== "transfer") live().filter(t => t.type === kind && t.categoryId).forEach(t => { const x = st[t.categoryId] ||= { n: 0, last: "" }; x.n++; if (t.date > x.last) x.last = t.date; });
+  const top = Object.entries(st).filter(([id, x]) => x.n >= 2 && x.last >= min && CATS.some(c => c.id === id && !c.archived)).sort((a, b) => b[1].n - a[1].n).slice(0, 6);
+  $("#quickWrap").hidden = !top.length;
+  $("#quickCats").innerHTML = top.map(([id]) => `<button type="button" data-v="${esc(id)}" aria-pressed="${$("#fCat").value === id}">${esc(CAT[id])}</button>`).join("");
+}
+$("#quickCats").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { $("#fCat").value = b.dataset.v; syncRefundOptions(); } });
+
+/* ---------- shareable summary images ---------- */
+function summaryImage(o) {
+  const W = 1080, P = 56, rh = 78, H = 470 + Math.max(1, o.rows.length) * rh + 110, c = document.createElement("canvas");
+  c.width = W; c.height = H; const g = c.getContext("2d"), F = (w, px) => { g.font = `${w} ${px}px system-ui, -apple-system, "Segoe UI", sans-serif`; };
+  const fit = (t, max) => { while (t.length > 1 && g.measureText(t).width > max) t = t.slice(0, -2) + "…"; return t; };
+  g.fillStyle = "#fafaf9"; g.fillRect(0, 0, W, H);
+  g.fillStyle = "#1c1917"; F(700, 54); g.fillText(o.title, P, 112);
+  g.fillStyle = "#78716c"; F(400, 30); g.fillText(fit(o.subtitle, W - 2 * P), P, 160);
+  const cw = (W - 2 * P - 40) / 3;
+  o.stats.forEach(([l, v, col], i) => {
+    const x = P + i * (cw + 20); g.beginPath(); g.roundRect(x, 196, cw, 156, 24); g.fillStyle = "#fff"; g.fill(); g.strokeStyle = "#e7e5e4"; g.lineWidth = 2; g.stroke();
+    g.fillStyle = "#78716c"; F(400, 26); g.fillText(l, x + 24, 246); g.fillStyle = col; F(700, 38); g.fillText(fit(v, cw - 40), x + 24, 312);
+  });
+  g.fillStyle = "#1c1917"; F(700, 34); g.fillText(o.rowsTitle, P, 424);
+  if (!o.rows.length) { g.fillStyle = "#78716c"; F(400, 28); g.fillText(o.empty, P, 490); }
+  o.rows.forEach((r, i) => {
+    const y = 486 + i * rh; g.textAlign = "right"; g.fillStyle = r.color; F(700, 30); g.fillText(r.r, W - P, y); g.textAlign = "left";
+    g.fillStyle = "#1c1917"; F(400, 30); g.fillText(fit(r.l, W - 2 * P - 380), P, y);
+    if (r.frac !== undefined) { g.fillStyle = "#e7e5e4"; g.fillRect(P, y + 14, W - 2 * P, 12); g.fillStyle = r.color; g.fillRect(P, y + 14, Math.max(4, (W - 2 * P) * r.frac), 12); }
+  });
+  g.fillStyle = "#a8a29e"; F(400, 24); g.fillText("Ledger · generated " + todayStr(), P, H - 44);
+  return c;
+}
+async function shareImage(c, name) {
+  const blob = await new Promise(r => c.toBlob(r, "image/png")), file = new File([blob], name, { type: "image/png" });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if (e.name === "AbortError") return; } }
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: name }); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast("Image downloaded. Share it from your gallery or WhatsApp.");
+}
+const statCards = s => [["Income", inr(s.inc), "#059669"], ["Expenses", inr(s.exp), "#e11d48"], ["Net", inr(s.net), s.net < 0 ? "#e11d48" : "#1c1917"]];
+$("#shareDayBtn").addEventListener("click", () => {
+  const d = $("#shareDay").value; if (!d) return;
+  const list = live().filter(t => t.date === d).sort((a, b) => a.createdAt - b.createdAt), s = summarize(list);
+  const rows = list.slice(0, 12).map(t => ({
+    l: t.type === "transfer" ? `Transfer: ${ACC[t.accountId] || "?"} → ${ACC[t.toAccountId] || "?"}` : (t.merchant ? t.merchant + " · " : "") + (CAT[t.categoryId] || "Uncategorized"),
+    r: (t.type === "income" ? "+" : t.type === "expense" ? "−" : "") + inr(t.amountMinor), color: t.type === "income" ? "#059669" : t.type === "expense" ? "#e11d48" : "#57534e" }));
+  if (list.length > 12) rows.push({ l: `+ ${list.length - 12} more`, r: "", color: "#78716c" });
+  const dt = new Date(d + "T00:00").toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  shareImage(summaryImage({ title: "Daily summary", subtitle: dt + " · All accounts", stats: statCards(s), rowsTitle: "Transactions", rows, empty: "No transactions on this day." }), `ledger-daily-${d}.png`);
+});
+$("#shareMonthBtn").addEventListener("click", () => {
+  const ym = $("#month").value; if (!ym) return;
+  const list = live().filter(t => t.date.startsWith(ym)), s = summarize(list), cats = byCat(list), total = cats.reduce((a, [, v]) => a + v, 0), [y, m] = ym.split("-").map(Number);
+  const elapsed = ym === todayStr().slice(0, 7) ? new Date().getDate() : new Date(y, m, 0).getDate();
+  shareImage(summaryImage({ title: "Monthly summary", stats: statCards(s), rowsTitle: "Top expense categories", empty: "No expenses this month.",
+    subtitle: `${new Date(y, m - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" })} · ${s.rate === null ? "No income" : "Savings rate " + s.rate.toFixed(0) + "%"} · Avg daily spend ${inr(Math.round(s.exp / elapsed))}`,
+    rows: cats.slice(0, 8).map(([id, v]) => ({ l: CAT[id] || "Uncategorized", r: `${inr(v)} · ${(v / total * 100).toFixed(0)}%`, color: "#e11d48", frac: v / total })) }), `ledger-monthly-${ym}.png`);
+});
+
 function start() {
-  $("#fDate").value = todayStr(); $("#month").value = todayStr().slice(0, 7); $("#bMonth").value = todayStr().slice(0, 7);
+  $("#fDate").value = todayStr(); $("#month").value = todayStr().slice(0, 7); $("#bMonth").value = todayStr().slice(0, 7); $("#shareDay").value = todayStr();
   seg("#segType", "#fType", [{ id: "expense", name: "Expense" }, { id: "income", name: "Income" }, { id: "transfer", name: "Transfer" }], syncForm)("expense");
   seg("#segAcc", "#fAcc", ACCS)(ACCS[0].id); seg("#segTo", "#fTo", ACCS); syncForm(); renderAccFilters();
   if (!configured) { $("#auth").hidden = false; $("#setup").hidden = false; $("#authBtn").disabled = true; return; }
