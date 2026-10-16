@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ledger – Income & Expense Tracker</title>
+<style>
+:root{--bg:#fafaf9;--card:#fff;--text:#1c1917;--muted:#78716c;--line:#e7e5e4;--inc:#059669;--exp:#e11d48;--ink:#1c1917;--onink:#fff;--warn:#b45309}
+:root[data-theme=dark]{--bg:#0c0a09;--card:#1c1917;--text:#f5f5f4;--muted:#a8a29e;--line:#292524;--inc:#34d399;--exp:#fb7185;--ink:#f5f5f4;--onink:#1c1917;--warn:#fbbf24}
+*{box-sizing:border-box}[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+:focus-visible{outline:2px solid var(--inc);outline-offset:2px}
+.wrap{max-width:880px;margin:0 auto;padding:16px 16px 48px}
+header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+header .wrap{display:flex;align-items:center;gap:8px;padding-bottom:10px;flex-wrap:wrap}
+.brand{font-weight:700;font-size:18px;margin-right:auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 1px 2px rgba(0,0,0,.04);margin-bottom:16px}
+h1{font-size:22px;margin:0 0 14px}h2{font-size:16px;margin:0 0 10px}
+label{display:block;font-size:13px;color:var(--muted)}
+input,select{display:block;width:100%;margin-top:4px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);font:inherit}
+.btn{background:var(--ink);color:var(--onink);border:0;border-radius:10px;padding:10px 16px;font:inherit;font-weight:600;cursor:pointer;transition:opacity .15s}
+.btn:hover{opacity:.85}.btn:disabled{opacity:.5}
+.link,.tab{background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:6px 10px;border-radius:8px}
+.link{text-decoration:underline}.tab[aria-current=page]{background:var(--line);font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px}
+@media(min-width:700px){.grid{grid-template-columns:repeat(4,1fr)}}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px}
+.stat small{color:var(--muted)}.stat b{display:block;font-size:20px;margin-top:2px}
+.num{font-variant-numeric:tabular-nums}.inc{color:var(--inc)}.exp{color:var(--exp)}.muted{color:var(--muted);font-size:13px}
+.form{display:grid;gap:12px}@media(min-width:700px){.form{grid-template-columns:repeat(3,1fr)}.span{grid-column:1/-1}}
+.err{color:var(--exp);font-size:13px;margin:0}.warn{color:var(--warn);font-size:13px}
+.auth{max-width:380px;margin:12vh auto 0;display:grid;gap:12px}
+ul.list{list-style:none;margin:0;padding:0}
+.list li{display:flex;gap:10px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}.list li:first-child{border-top:0}
+.list .main{flex:1;min-width:0}.list .main div{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.donutrow{display:flex;gap:20px;align-items:center;flex-wrap:wrap}.donut{width:170px;height:170px}
+.legend{flex:1;min-width:200px;display:grid;gap:6px}.legend div{display:flex;gap:8px;align-items:center}.legend i{width:10px;height:10px;border-radius:50%}
+.legend span:last-child{margin-left:auto}
+#sync{text-align:right;font-size:12px;color:var(--muted);margin-bottom:12px}
+.toolbar{display:flex;gap:10px;margin-bottom:12px}.toolbar input{margin:0}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<main id="auth" hidden>
+  <form id="authForm" class="card auth">
+    <h1 id="authTitle">Log in</h1>
+    <p id="setup" class="warn" hidden role="alert">Firebase isn't configured yet. Open index.html and paste your Firebase web config into the CONFIG object near the bottom.</p>
+    <label>Email<input id="email" type="email" required autocomplete="email"></label>
+    <label id="pwWrap">Password<input id="pw" type="password" minlength="6" required autocomplete="current-password"></label>
+    <p id="authMsg" class="err" role="status"></p>
+    <button class="btn" id="authBtn">Log in</button>
+    <button type="button" class="link" id="googleBtn">Continue with Google</button>
+    <div style="display:flex;justify-content:space-between">
+      <button type="button" class="link" id="toggleMode">Create an account</button>
+      <button type="button" class="link" id="forgot">Forgot password?</button>
+    </div>
+  </form>
+</main>
+
+<div id="app" hidden>
+  <header><div class="wrap">
+    <span class="brand">Ledger</span>
+    <button class="tab" data-tab="dash" aria-current="page">Dashboard</button>
+    <button class="tab" data-tab="tx">Transactions</button>
+    <button class="tab" id="theme" aria-label="Toggle dark mode">Theme</button>
+    <button class="tab" id="logout">Log out</button>
+  </div></header>
+
+  <div class="wrap">
+    <div id="sync" role="status"></div>
+
+    <section id="dash">
+      <h1>Overview</h1>
+      <label style="max-width:200px;margin-bottom:12px">Month<input id="month" type="month"></label>
+      <div class="grid" id="stats"></div>
+      <div class="card"><h2>Spending by category</h2><div id="donut"></div></div>
+      <p class="muted">Refunds reduce the expense they're linked to. Transfers between your accounts are excluded from income and expenses.</p>
+    </section>
+
+    <section id="tx" hidden>
+      <h1>Transactions</h1>
+      <form id="txForm" class="card form" novalidate>
+        <label>Type<select name="type" id="fType"><option value="expense">Expense</option><option value="income">Income</option><option value="transfer">Transfer</option></select></label>
+        <label>Amount (₹)<input name="amount" inputmode="decimal" placeholder="1,250.00" autocomplete="off"></label>
+        <label>Date<input name="date" type="date" id="fDate"></label>
+        <label><span id="accLbl">Account</span><select name="account" id="fAcc"></select></label>
+        <label id="catWrap">Category<select name="category" id="fCat"></select></label>
+        <label id="toWrap" hidden>To account<select name="toAccount" id="fTo"></select></label>
+        <label>Merchant or source<input name="merchant" autocomplete="off"></label>
+        <label id="refWrap" class="span" hidden>Refund of (optional)<select name="refundOf" id="fRef"></select></label>
+        <label class="span">Notes<input name="notes" autocomplete="off"></label>
+        <p id="txErr" class="err span" role="alert"></p>
+        <button class="btn span">Add transaction</button>
+      </form>
+      <div class="toolbar">
+        <input id="q" type="search" placeholder="Search merchant, notes or category" aria-label="Search transactions">
+        <button class="btn" id="export" type="button">Export CSV</button>
+      </div>
+      <div class="card"><ul class="list" id="list"></ul><button class="link" id="more" hidden>Show more</button></div>
+      <p class="muted">The CSV contains transactions only. It is not a full backup of accounts, budgets or goals.</p>
+    </section>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithPopup, GoogleAuthProvider, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+/* ============ PASTE YOUR FIREBASE WEB CONFIG HERE (public values, safe to commit) ============ */
+const CONFIG = {
+  apiKey: "PASTE_API_KEY",
+  authDomain: "PASTE_PROJECT_ID.firebaseapp.com",
+  projectId: "PASTE_PROJECT_ID",
+  appId: "PASTE_APP_ID"
+};
+/* ================================================================================================ */
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const pad = n => String(n).padStart(2, "0");
+const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+
+const INC = ["Salary", "Freelance", "Business Income", "Investment Income", "Interest", "Gifts", "Refunds", "Other Income"];
+const EXP = ["Food & Groceries", "Transportation", "Rent & Housing", "Utilities", "Shopping", "Healthcare", "Education", "Entertainment", "Travel", "Personal Care", "Subscriptions", "Family", "Insurance", "EMI & Loan Payments", "Other Expenses"];
+const CATS = [...INC.map(n => ({ id: "inc-" + slug(n), name: n, kind: "income" })), ...EXP.map(n => ({ id: "exp-" + slug(n), name: n, kind: "expense" }))];
+const CAT = Object.fromEntries(CATS.map(c => [c.id, c.name]));
+const ACCS = [{ id: "acc-cash", name: "Cash" }, { id: "acc-savings", name: "Savings Account" }];
+const ACC = Object.fromEntries(ACCS.map(a => [a.id, a.name]));
+const COLORS = ["#0f766e", "#b45309", "#7c3aed", "#be123c", "#1d4ed8", "#4d7c0f", "#a21caf", "#475569"];
+
+/* Money is integer paise; formatting is display-only. */
+const parseAmt = s => { s = s.replace(/[₹,\s]/g, ""); if (!/^\d+(\.\d{1,2})?$/.test(s)) return null; const [w, f = ""] = s.split("."); const m = Number(w) * 100 + Number(f.padEnd(2, "0")); return Number.isSafeInteger(m) && m > 0 ? m : null; };
+const inr = m => (m < 0 ? "-" : "") + "₹" + (Math.abs(m) / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+let txs = [], pendingCount = 0, fromCache = true, limit = 50, user = null, unsub = null, mode = "login", db = null, auth = null;
+const live = () => txs.filter(t => t.status === "posted" && !t.deletedAt);
+const inMonth = ym => live().filter(t => t.date.startsWith(ym));
+
+function summarize(list) {
+  let inc = 0, exp = 0, ref = 0, n = 0;
+  for (const t of list) {
+    if (t.type === "transfer") continue;
+    n++;
+    if (t.type === "expense") exp += t.amountMinor; else if (t.refundOfId) ref += t.amountMinor; else inc += t.amountMinor;
+  }
+  const e = Math.max(0, exp - ref), net = inc - e;
+  return { inc, exp: e, net, rate: inc > 0 ? net / inc * 100 : null, n };
+}
+function byCat(list) {
+  const m = new Map(), byId = new Map(txs.map(t => [t.id, t])), add = (k, v) => m.set(k, (m.get(k) || 0) + v);
+  for (const t of list) {
+    if (t.type === "expense") add(t.categoryId || "x", t.amountMinor);
+    else if (t.type === "income" && t.refundOfId) { const o = byId.get(t.refundOfId); if (o && o.type === "expense") add(o.categoryId || "x", -t.amountMinor); }
+  }
+  return [...m].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+}
+
+/* ---------- rendering ---------- */
+function renderSync() {
+  const n = pendingCount, s = n === 1 ? "" : "s";
+  let t;
+  if (n > 0) t = navigator.onLine ? `${n} change${s} not yet synced` : `Offline. ${n} change${s} saved on this device only`;
+  else if (!navigator.onLine) t = "Offline. Showing data saved on this device";
+  else t = fromCache ? "Connecting…" : "All changes synced";
+  $("#sync").textContent = t;
+}
+function renderDash() {
+  const ym = $("#month").value; if (!ym) return;
+  const cur = summarize(inMonth(ym)), [y, m] = ym.split("-").map(Number), pd = new Date(y, m - 2, 1);
+  const prev = summarize(inMonth(`${pd.getFullYear()}-${pad(pd.getMonth() + 1)}`));
+  const delta = prev.exp > 0 ? (cur.exp - prev.exp) / prev.exp * 100 : null;
+  $("#stats").innerHTML = [
+    ["Income", inr(cur.inc), "inc", `${cur.n} transactions`],
+    ["Expenses", inr(cur.exp), "exp", delta === null ? "No prior month to compare" : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}% vs last month`],
+    ["Net savings", inr(cur.net), cur.net < 0 ? "exp" : "", "Income − expenses"],
+    ["Savings rate", cur.rate === null ? "n/a" : cur.rate.toFixed(1) + "%", "", cur.rate === null ? "No income this month" : "Of income saved"],
+  ].map(([l, v, c, sub]) => `<div class="stat"><small>${l}</small><b class="num ${c}">${esc(v)}</b><small>${esc(sub)}</small></div>`).join("");
+  const cats = byCat(inMonth(ym)), total = cats.reduce((a, [, v]) => a + v, 0);
+  if (!total) { $("#donut").innerHTML = `<p class="muted">No expenses this month. Add one under Transactions to see your breakdown.</p>`; return; }
+  const C = 2 * Math.PI * 40; let off = 0;
+  const arcs = cats.map(([, v], i) => { const len = v / total * C; const s = `<circle cx="50" cy="50" r="40" fill="none" stroke="${COLORS[i % 8]}" stroke-width="16" stroke-dasharray="${len} ${C - len}" stroke-dashoffset="${-off}" transform="rotate(-90 50 50)"/>`; off += len; return s; }).join("");
+  const legend = cats.map(([id, v], i) => `<div><i style="background:${COLORS[i % 8]}"></i><span>${esc(CAT[id] || "Uncategorized")}</span><span class="num">${inr(v)} · ${(v / total * 100).toFixed(0)}%</span></div>`).join("");
+  $("#donut").innerHTML = `<div class="donutrow"><svg class="donut" viewBox="0 0 100 100" role="img" aria-label="Spending by category">${arcs}</svg><div class="legend">${legend}</div></div>`;
+}
+function sorted() { return live().sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt); }
+function renderList() {
+  const q = $("#q").value.trim().toLowerCase();
+  const rows = sorted().filter(t => !q || [t.merchant, t.notes, CAT[t.categoryId]].some(s => s && s.toLowerCase().includes(q)));
+  if (!rows.length) { $("#list").innerHTML = `<li class="muted">No transactions found. Add your first one above.</li>`; $("#more").hidden = true; return; }
+  $("#list").innerHTML = rows.slice(0, limit).map(t => {
+    const title = t.merchant || (t.type === "transfer" ? "Transfer" : CAT[t.categoryId] || "Uncategorized");
+    const sub = t.type === "transfer" ? `${ACC[t.accountId] || "?"} → ${ACC[t.toAccountId] || "?"}` : `${CAT[t.categoryId] || ""} · ${ACC[t.accountId] || ""}`;
+    const cls = t.type === "income" ? "inc" : t.type === "expense" ? "exp" : "", sign = t.type === "income" ? "+" : t.type === "expense" ? "−" : "";
+    return `<li><div class="main"><div><b>${esc(title)}</b></div><div class="muted">${esc(t.date)} · ${esc(sub)}</div></div><b class="num ${cls}">${sign}${inr(t.amountMinor)}</b><button class="link" data-del="${esc(t.id)}" aria-label="Delete transaction">Delete</button></li>`;
+  }).join("");
+  $("#more").hidden = rows.length <= limit;
+}
+const renderAll = () => { renderSync(); renderDash(); renderList(); syncRefundOptions(); };
+
+/* ---------- form ---------- */
+const opts = (arr, sel) => arr.map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join("");
+function syncForm() {
+  const type = $("#fType").value, isT = type === "transfer";
+  $("#catWrap").hidden = isT; $("#toWrap").hidden = !isT; $("#accLbl").textContent = isT ? "From account" : "Account";
+  if (!isT) $("#fCat").innerHTML = `<option value="">Select…</option>` + opts(CATS.filter(c => c.kind === type));
+  syncRefundOptions();
+}
+function syncRefundOptions() {
+  const show = $("#fType").value === "income" && $("#fCat").value === "inc-refunds"; $("#refWrap").hidden = !show; if (!show) return;
+  const cur = $("#fRef").value;
+  $("#fRef").innerHTML = `<option value="">Not linked to an expense</option>` + sorted().filter(t => t.type === "expense").slice(0, 50)
+    .map(t => `<option value="${esc(t.id)}">${esc(t.date)} · ${esc(t.merchant || CAT[t.categoryId] || "")} · ${inr(t.amountMinor)}</option>`).join("");
+  $("#fRef").value = cur;
+}
+function save(t) { return setDoc(doc(db, "users", user.uid, "transactions", t.id), t).catch(e => { $("#txErr").textContent = e.code === "permission-denied" ? "Permission denied. Check that your Firestore rules are published." : "Could not save: " + e.message; }); }
+
+$("#txForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const fd = Object.fromEntries(new FormData(e.target)), errs = [], amt = parseAmt(fd.amount || "");
+  if (!amt) errs.push("Amount must be greater than zero (for example 1,250.50).");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fd.date) || isNaN(Date.parse(fd.date))) errs.push("Enter a valid date.");
+  if (fd.type === "transfer") { if (!fd.toAccount) errs.push("Choose a destination account."); else if (fd.toAccount === fd.account) errs.push("Source and destination accounts must differ."); }
+  else if (!fd.category) errs.push("Choose a category.");
+  $("#txErr").textContent = errs.join(" "); if (errs.length) return;
+  const now = Date.now(), t = { id: crypto.randomUUID(), type: fd.type, amountMinor: amt, date: fd.date, accountId: fd.account, status: "posted", createdAt: now, updatedAt: now, version: 1 };
+  if (fd.type === "transfer") t.toAccountId = fd.toAccount; else { t.categoryId = fd.category; if (fd.type === "income" && fd.refundOf) t.refundOfId = fd.refundOf; }
+  if (fd.merchant.trim()) t.merchant = fd.merchant.trim().slice(0, 120);
+  if (fd.notes.trim()) t.notes = fd.notes.trim().slice(0, 500);
+  save(t); // don't await: offline writes resolve only after the server acknowledges; the UI updates from the local cache at once
+  e.target.amount.value = ""; e.target.merchant.value = ""; e.target.notes.value = "";
+});
+$("#fType").addEventListener("change", syncForm);
+$("#fCat").addEventListener("change", syncRefundOptions);
+$("#q").addEventListener("input", () => { limit = 50; renderList(); });
+$("#more").addEventListener("click", () => { limit += 50; renderList(); });
+$("#month").addEventListener("input", renderDash);
+$("#list").addEventListener("click", e => {
+  const id = e.target.dataset?.del; if (!id) return;
+  const t = txs.find(x => x.id === id);
+  if (t && confirm("Delete this transaction?")) { const now = Date.now(); save({ ...t, deletedAt: now, updatedAt: now, version: t.version + 1 }); }
+});
+$("#export").addEventListener("click", () => {
+  const cell = v => { let s = String(v ?? ""); if (/^[=+\-@]/.test(s)) s = "'" + s; return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const rows = [["id", "type", "date", "amount_inr", "account", "to_account", "category", "merchant", "notes"],
+    ...sorted().map(t => [t.id, t.type, t.date, (t.amountMinor / 100).toFixed(2), ACC[t.accountId] || t.accountId, ACC[t.toAccountId] || "", CAT[t.categoryId] || "", t.merchant, t.notes])];
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob(["\ufeff" + rows.map(r => r.map(cell).join(",")).join("\n")], { type: "text/csv" })), download: `transactions-${todayStr()}.csv` });
+  a.click(); URL.revokeObjectURL(a.href);
+});
+
+/* ---------- tabs, theme ---------- */
+document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("[data-tab]").forEach(x => x.removeAttribute("aria-current")); b.setAttribute("aria-current", "page");
+  $("#dash").hidden = b.dataset.tab !== "dash"; $("#tx").hidden = b.dataset.tab !== "tx";
+}));
+const setTheme = t => { document.documentElement.dataset.theme = t; try { localStorage.setItem("theme", t); } catch {} };
+try { const s = localStorage.getItem("theme"); document.documentElement.dataset.theme = s || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); } catch {}
+$("#theme").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
+addEventListener("online", renderSync); addEventListener("offline", renderSync);
+
+/* ---------- auth + data ---------- */
+const MSG = { "auth/invalid-credential": "Email or password is incorrect.", "auth/email-already-in-use": "An account with this email already exists.", "auth/weak-password": "Use a password with at least 6 characters.", "auth/invalid-email": "Enter a valid email address.", "auth/too-many-requests": "Too many attempts. Wait a few minutes and try again.", "auth/network-request-failed": "Network error. Check your connection.", "auth/unauthorized-domain": "This site's domain isn't authorized in Firebase (Authentication → Settings → Authorized domains)." };
+const configured = !Object.values(CONFIG).some(v => String(v).includes("PASTE"));
+function setMode(m) {
+  mode = m; const reset = m === "reset";
+  $("#authTitle").textContent = { login: "Log in", register: "Create your account", reset: "Reset password" }[m];
+  $("#authBtn").textContent = { login: "Log in", register: "Create account", reset: "Send reset link" }[m];
+  $("#pwWrap").hidden = reset; $("#pw").required = !reset; $("#googleBtn").hidden = reset; $("#forgot").hidden = m !== "login";
+  $("#toggleMode").textContent = m === "login" ? "Create an account" : "Back to log in"; $("#authMsg").textContent = "";
+}
+$("#toggleMode").addEventListener("click", () => setMode(mode === "login" ? "register" : "login"));
+$("#forgot").addEventListener("click", () => setMode("reset"));
+async function authRun(fn, ok) { $("#authBtn").disabled = true; $("#authMsg").textContent = ""; try { await fn(); if (ok) $("#authMsg").textContent = ok; } catch (e) { $("#authMsg").textContent = MSG[e.code] || "Something went wrong. Try again."; } $("#authBtn").disabled = false; }
+$("#authForm").addEventListener("submit", e => {
+  e.preventDefault(); if (!configured) return; const em = $("#email").value.trim(), pw = $("#pw").value;
+  if (mode === "login") authRun(() => signInWithEmailAndPassword(auth, em, pw));
+  else if (mode === "register") authRun(() => createUserWithEmailAndPassword(auth, em, pw));
+  else authRun(() => sendPasswordResetEmail(auth, em), "Reset link sent. Check your inbox.");
+});
+$("#googleBtn").addEventListener("click", () => configured && authRun(() => signInWithPopup(auth, new GoogleAuthProvider())));
+$("#logout").addEventListener("click", () => signOut(auth));
+
+function start() {
+  $("#fDate").value = todayStr(); $("#month").value = todayStr().slice(0, 7);
+  $("#fAcc").innerHTML = opts(ACCS); $("#fTo").innerHTML = `<option value="">Select…</option>` + opts(ACCS); syncForm();
+  if (!configured) { $("#auth").hidden = false; $("#setup").hidden = false; $("#authBtn").disabled = true; return; }
+  const app = initializeApp(CONFIG); auth = getAuth(app);
+  try { db = initializeFirestore(app, { ignoreUndefinedProperties: true, localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
+  catch { db = initializeFirestore(app, { ignoreUndefinedProperties: true }); } // offline cache unsupported in this browser
+  onAuthStateChanged(auth, u => {
+    user = u; if (unsub) { unsub(); unsub = null; } txs = [];
+    $("#auth").hidden = !!u; $("#app").hidden = !u; if (!u) return;
+    unsub = onSnapshot(collection(db, "users", u.uid, "transactions"), { includeMetadataChanges: true }, snap => {
+      txs = snap.docs.map(d => d.data()); pendingCount = snap.docs.filter(d => d.metadata.hasPendingWrites).length; fromCache = snap.metadata.fromCache; renderAll();
+    }, err => { $("#sync").textContent = err.code === "permission-denied" ? "Permission denied. Publish the Firestore rules from the setup guide." : "Sync error: " + err.message; });
+  });
+}
+setMode("login"); start();
+</script>
+</body>
+</html>
