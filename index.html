@@ -80,8 +80,10 @@ table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}th,td{pa
     <section id="dash">
       <h1>Overview</h1>
       <label style="max-width:200px;margin-bottom:12px">Month<input id="month" type="month"></label>
+      <div class="field" style="max-width:460px;margin-bottom:12px">Show account<div class="seg" id="accFilterDash" role="group" aria-label="Filter by account"></div></div>
       <div class="grid" id="stats"></div>
       <div class="card"><h2>Spending by category</h2><div id="donut"></div></div>
+      <div class="card"><h2>By account (selected month)</h2><div id="accChart"></div><div id="accTable"></div></div>
       <div class="card"><h2>Day by day</h2><div id="dayChart"></div><div id="dayTable"></div></div>
       <div class="card"><h2>Last 12 months</h2><div id="monthChart"></div><div id="monthTable"></div></div>
       <p class="muted">Refunds reduce the expense they're linked to. Transfers between your accounts are excluded from income and expenses.</p>
@@ -114,6 +116,7 @@ table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}th,td{pa
         <p id="txErr" class="err span" role="alert"></p>
         <button class="btn span">Add transaction</button>
       </form>
+      <div class="field" style="max-width:460px;margin-bottom:12px">Show account<div class="seg" id="accFilterTx" role="group" aria-label="Filter by account"></div></div>
       <div class="toolbar">
         <input id="q" type="search" placeholder="Search merchant, notes or category" aria-label="Search transactions">
         <button class="btn" id="export" type="button">Export CSV</button>
@@ -160,7 +163,9 @@ const inr = m => (m < 0 ? "-" : "") + "₹" + (Math.abs(m) / 100).toLocaleString
 
 let txs = [], pendingCount = 0, fromCache = true, limit = 50, user = null, unsub = null, mode = "login", db = null, auth = null;
 const live = () => txs.filter(t => t.status === "posted" && !t.deletedAt);
-const inMonth = ym => live().filter(t => t.date.startsWith(ym));
+let viewAcc = "";
+const inView = t => !viewAcc || t.accountId === viewAcc || (t.type === "transfer" && t.toAccountId === viewAcc);
+const inMonth = ym => live().filter(t => t.date.startsWith(ym) && inView(t));
 
 function summarize(list) {
   let inc = 0, exp = 0, ref = 0, n = 0;
@@ -194,7 +199,7 @@ function renderDash() {
   const ym = $("#month").value; if (!ym) return;
   const cur = summarize(inMonth(ym)), [y, m] = ym.split("-").map(Number), pd = new Date(y, m - 2, 1);
   const prev = summarize(inMonth(`${pd.getFullYear()}-${pad(pd.getMonth() + 1)}`));
-  renderTrends(ym, cur);
+  renderTrends(ym, cur); renderAccounts(ym);
   const delta = prev.exp > 0 ? (cur.exp - prev.exp) / prev.exp * 100 : null;
   $("#stats").innerHTML = [
     ["Income", inr(cur.inc), "inc", `${cur.n} transactions`],
@@ -212,9 +217,9 @@ function renderDash() {
 function sorted() { return live().sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt); }
 function renderList() {
   const q = $("#q").value.trim().toLowerCase();
-  const rows = sorted().filter(t => !q || [t.merchant, t.notes, CAT[t.categoryId]].some(s => s && s.toLowerCase().includes(q)));
+  const rows = sorted().filter(t => !q || [t.merchant, t.notes, CAT[t.categoryId]].some(s => s && s.toLowerCase().includes(q))).filter(inView);
   if (!rows.length) { $("#list").innerHTML = `<li class="muted">No transactions found. Add your first one above.</li>`; $("#more").hidden = true; return; }
-  let last = ""; const perDay = {}; live().forEach(t => (perDay[t.date] ||= []).push(t));
+  let last = ""; const perDay = {}; live().filter(inView).forEach(t => (perDay[t.date] ||= []).push(t));
   $("#list").innerHTML = rows.slice(0, limit).map(t => {
     let head = "";
     if (t.date !== last) { last = t.date; const s = summarize(perDay[t.date]); head = `<li class="dayhead"><b>${new Date(t.date + "T00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</b><span class="muted num">+${inr(s.inc)} · −${inr(s.exp)}</span></li>`; }
@@ -317,7 +322,7 @@ $("#fCat").addEventListener("change", e => {
 /* ---------- daily + monthly charts ---------- */
 const short = m => { const r = m / 100; return r >= 1e7 ? (r / 1e7).toFixed(1) + "Cr" : r >= 1e5 ? (r / 1e5).toFixed(1) + "L" : r >= 1e3 ? (r / 1e3).toFixed(r >= 1e4 ? 0 : 1) + "k" : String(Math.round(r)); };
 function barChart(labels, inc, exp, every = 1) {
-  const W = 600, H = 210, L = 44, B = 24, T = 8, max = Math.max(1, ...inc, ...exp), gw = (W - L) / labels.length, bw = Math.max(2, gw / 2 - 2);
+  const W = 600, H = 210, L = 44, B = 24, T = 8, max = Math.max(1, ...inc, ...exp), gw = (W - L) / labels.length, bw = Math.min(28, Math.max(2, gw / 2 - 2));
   const y = v => T + (H - T - B) * (1 - v / max); let g = "";
   for (let i = 0; i <= 3; i++) { const yy = y(max * i / 3); g += `<line x1="${L}" x2="${W}" y1="${yy}" y2="${yy}" style="stroke:var(--line)"/><text x="${L - 4}" y="${yy + 3}" text-anchor="end" font-size="9" style="fill:var(--muted)">${short(max * i / 3)}</text>`; }
   labels.forEach((lb, i) => {
@@ -380,10 +385,28 @@ function seg(box, hidden, items, onPick) {
   el.onclick = e => { const b = e.target.closest("button"); if (b) { set(b.dataset.v); if (onPick) onPick(); } };
   return set;
 }
+/* ---------- review by account ---------- */
+function renderAccFilters() {
+  for (const box of ["#accFilterDash", "#accFilterTx"]) $(box).innerHTML = [{ id: "", name: "All accounts" }, ...ACCS].map(a => `<button type="button" data-v="${esc(a.id)}" aria-pressed="${a.id === viewAcc}">${esc(a.name)}</button>`).join("");
+}
+for (const box of ["#accFilterDash", "#accFilterTx"]) $(box).addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  viewAcc = b.dataset.v; limit = 50; renderAccFilters(); renderDash(); renderList();
+});
+function renderAccounts(ym) {
+  const L = live(), rows = ACCS.map(a => {
+    const s = summarize(L.filter(t => t.date.startsWith(ym) && t.accountId === a.id)), move = t => t.type !== "transfer" ? 0 : (t.toAccountId === a.id ? t.amountMinor : 0) - (t.accountId === a.id ? t.amountMinor : 0);
+    const bal = L.reduce((n, t) => n + (t.accountId === a.id ? (t.type === "income" ? t.amountMinor : t.type === "expense" ? -t.amountMinor : 0) : 0) + move(t), 0);
+    return { name: a.name, ...s, tr: L.filter(t => t.date.startsWith(ym)).reduce((n, t) => n + move(t), 0), bal };
+  });
+  $("#accChart").innerHTML = barChart(rows.map(r => r.name), rows.map(r => r.inc), rows.map(r => r.exp));
+  $("#accTable").innerHTML = table(["Account", "Income", "Expenses", "Net", "Transfers", "Balance"], rows.map(r => [r.name, inr(r.inc), inr(r.exp), inr(r.net), inr(r.tr), inr(r.bal)])) +
+    `<p class="muted">Balance counts all income, expenses and transfers ever recorded (opening balances aren't set yet). Transfers are shown separately and are never income or expenses.</p>`;
+}
 function start() {
   $("#fDate").value = todayStr(); $("#month").value = todayStr().slice(0, 7);
   seg("#segType", "#fType", [{ id: "expense", name: "Expense" }, { id: "income", name: "Income" }, { id: "transfer", name: "Transfer" }], syncForm)("expense");
-  seg("#segAcc", "#fAcc", ACCS)(ACCS[0].id); seg("#segTo", "#fTo", ACCS); syncForm();
+  seg("#segAcc", "#fAcc", ACCS)(ACCS[0].id); seg("#segTo", "#fTo", ACCS); syncForm(); renderAccFilters();
   if (!configured) { $("#auth").hidden = false; $("#setup").hidden = false; $("#authBtn").disabled = true; return; }
   const app = initializeApp(CONFIG); auth = getAuth(app);
   try { db = initializeFirestore(app, { ignoreUndefinedProperties: true, localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
