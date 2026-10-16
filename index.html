@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0b14">
+<meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png">
 <title>Ledger – Income & Expense Tracker</title>
 <style>
 :root{--r:16px;--sh:none;--glass:none;--bgimg:none;--fh:inherit;--accent2:var(--accent);--ink:var(--accent);--soft:color-mix(in srgb,var(--accent) 14%,transparent)}
@@ -83,6 +86,19 @@ input,select,.seg{background:var(--field)}
 .pop{background:var(--pop)}
 .themes{display:grid;grid-template-columns:1fr 1fr;gap:8px}.themes button{display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--line);border-radius:12px;background:transparent;color:var(--text);font:inherit;cursor:pointer}
 .themes button[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 2px var(--soft)}.themes i{width:22px;height:22px;border-radius:50%;flex:none}
+html{-webkit-text-size-adjust:100%}body{-webkit-tap-highlight-color:transparent;overscroll-behavior-y:contain}
+button,summary,.seg button{touch-action:manipulation}
+header{padding-top:env(safe-area-inset-top)}
+.sheet{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center}.sheet-bg{position:absolute;inset:0;background:rgba(0,0,0,.55)}
+.sheet-box{position:relative;width:100%;max-width:440px;background:var(--pop);color:var(--text);border:1px solid var(--line);border-radius:22px 22px 0 0;padding:22px 20px calc(20px + env(safe-area-inset-bottom));display:grid;gap:14px;animation:up .22s ease}
+.sheet-box b{font-size:17px}.sheet-box .row{display:flex;gap:10px}.sheet-box .btn{flex:1}.btn.danger{background:var(--exp);color:#fff}
+@keyframes up{from{transform:translateY(40px);opacity:0}}
+@media(min-width:700px){.sheet{align-items:center}.sheet-box{border-radius:22px}}
+@media(max-width:699px){
+  input,select{font-size:16px}.seg button{min-height:44px}.iconbtn.sm{width:40px;height:40px}.hide-m{display:none}
+  .wrap{padding:14px 12px 56px}.card{padding:16px}h1{font-size:23px}th,td{padding:8px 6px}
+  .toolbar{flex-direction:column}.toolbar .btn{width:100%}.legend{min-width:100%}
+}
 @media(max-width:699px){
   .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;margin:0;gap:0;justify-content:space-around;background:var(--pop);border-top:1px solid var(--line);padding:6px 6px calc(6px + env(safe-area-inset-bottom))}
   .tab{flex:1;flex-direction:column;gap:3px;font-size:11px;padding:6px 2px;border-radius:12px}
@@ -121,7 +137,8 @@ input,select,.seg{background:var(--field)}
       <button class="tab" data-tab="cats">Categories</button>
     </nav>
     <details class="menu" id="themeMenu"><summary class="iconbtn" id="themeIcon" aria-label="Appearance"></summary>
-      <div class="pop"><b>Theme</b><div class="themes" id="themeGrid"></div><span class="muted">Shortcuts: N new · / search · 1–4 pages</span></div></details>
+      <div class="pop"><b>Theme</b><div class="themes" id="themeGrid"></div><span class="muted hide-m">Shortcuts: N new · / search · 1–4 pages</span>
+      <button type="button" class="btn ghost" id="installBtn" hidden>Install app</button><span class="muted" id="iosHint" hidden>On iPhone: tap Share, then Add to Home Screen.</span></div></details>
     <button class="iconbtn" id="logout" aria-label="Log out"></button>
   </div></header>
   <button class="fab" id="fab" aria-label="Add transaction"></button>
@@ -206,6 +223,9 @@ input,select,.seg{background:var(--field)}
   </div>
 </div>
 
+<div id="sheet" class="sheet" hidden><div class="sheet-bg"></div>
+  <form class="sheet-box" role="dialog" aria-modal="true" aria-labelledby="shTitle"><b id="shTitle"></b><input id="shInput" maxlength="40" autocomplete="off" hidden aria-label="Name">
+    <div class="row"><button type="button" class="btn ghost" id="shNo">Cancel</button><button class="btn" id="shYes">OK</button></div></form></div>
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script type="module">
@@ -334,7 +354,7 @@ function syncRefundOptions() {
   $("#fRef").value = cur;
 }
 let toastTimer;
-function toast(msg) { const el = $("#toast"); el.textContent = msg; el.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("show"), 3000); }
+function toast(msg) { const el = $("#toast"); el.textContent = msg; el.classList.add("show"); navigator.vibrate?.(12); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("show"), 3000); }
 /* Resolves true when the server accepts the write, false if it is rejected. */
 function save(t) { return setDoc(doc(db, "users", user.uid, "transactions", t.id), t).then(() => true).catch(e => { $("#txErr").textContent = e.code === "permission-denied" ? "Permission denied. Check that your Firestore rules are published." : "Could not save: " + e.message; return false; }); }
 
@@ -364,7 +384,7 @@ $("#list").addEventListener("click", e => {
   const bt = e.target.closest("button"), id = bt?.dataset.del || bt?.dataset.edit; if (!id) return;
   const t = txs.find(x => x.id === id);
   if (t && bt.dataset.edit) return startEdit(t);
-  if (t && confirm("Delete this transaction?")) { const now = Date.now(); save({ ...t, deletedAt: now, updatedAt: now, version: t.version + 1 }); }
+  if (t) ask({ title: "Delete this transaction?", ok: "Delete", danger: true }).then(y => { if (y) { const now = Date.now(); save({ ...t, deletedAt: now, updatedAt: now, version: t.version + 1 }); toast("Transaction deleted"); } });
 });
 $("#export").addEventListener("click", () => {
   const cell = v => { let s = String(v ?? ""); if (/^[=+\-@]/.test(s)) s = "'" + s; return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
@@ -379,9 +399,9 @@ let custom = [], want = "";
 function rebuildCats() { CATS = [...DEFAULT_CATS, ...custom]; CAT = Object.fromEntries(CATS.map(c => [c.id, c.name])); }
 function addCategory(name, kind) {
   name = name.trim().slice(0, 40); if (!name) return null;
-  if (CATS.some(c => !c.archived && c.kind === kind && c.name.toLowerCase() === name.toLowerCase())) { alert("A category with that name already exists."); return null; }
+  if (CATS.some(c => !c.archived && c.kind === kind && c.name.toLowerCase() === name.toLowerCase())) { toast("A category with that name already exists."); return null; }
   const now = Date.now(), id = "c-" + crypto.randomUUID();
-  setDoc(doc(db, "users", user.uid, "categories", id), { id, name, kind, archived: false, createdAt: now, updatedAt: now }).catch(e => alert("Could not save category: " + e.message));
+  setDoc(doc(db, "users", user.uid, "categories", id), { id, name, kind, archived: false, createdAt: now, updatedAt: now }).catch(e => toast("Could not save category: " + e.message));
   return id;
 }
 function renderCats() {
@@ -394,24 +414,24 @@ $("#catForm").addEventListener("submit", e => { e.preventDefault(); const id = a
 $("#cats").addEventListener("click", e => {
   const c = CATS.find(x => x.id === (e.target.dataset?.ren || e.target.dataset?.rm)); if (!c) return;
   const ref = doc(db, "users", user.uid, "categories", c.id), now = Date.now();
-  if (e.target.dataset.ren) { const n = (prompt("Rename category", c.name) || "").trim().slice(0, 40); if (n && n !== c.name) setDoc(ref, { ...c, name: n, updatedAt: now }); }
-  else if (confirm(`Delete "${c.name}"? Existing transactions keep it; you just can't pick it for new ones.`)) setDoc(ref, { ...c, archived: true, updatedAt: now });
+  if (e.target.dataset.ren) ask({ title: "Rename category", input: true, value: c.name, ok: "Save" }).then(n => { n = (n || "").slice(0, 40); if (n && n !== c.name) setDoc(ref, { ...c, name: n, updatedAt: now }); });
+  else ask({ title: `Delete "${c.name}"?`, ok: "Delete", danger: true }).then(y => { if (y) setDoc(ref, { ...c, archived: true, updatedAt: now }); });
 });
 $("#fCat").addEventListener("change", e => {
-  if (e.target.value === "__new") { const id = addCategory(prompt("New category name") || "", $("#fType").value); if (id) want = id; else e.target.value = ""; return; }
+  if (e.target.value === "__new") { e.target.value = ""; ask({ title: "New category name", input: true, ok: "Add" }).then(n => { const id = n && addCategory(n, $("#fType").value); if (id) want = id; }); return; }
   syncRefundOptions();
 });
 
 /* ---------- daily + monthly charts ---------- */
 const short = m => { const r = m / 100; return r >= 1e7 ? (r / 1e7).toFixed(1) + "Cr" : r >= 1e5 ? (r / 1e5).toFixed(1) + "L" : r >= 1e3 ? (r / 1e3).toFixed(r >= 1e4 ? 0 : 1) + "k" : String(Math.round(r)); };
 function barChart(labels, inc, exp, every = 1) {
-  const W = 600, H = 210, L = 44, B = 24, T = 8, max = Math.max(1, ...inc, ...exp), gw = (W - L) / labels.length, bw = Math.min(28, Math.max(2, gw / 2 - 2));
+  const mob = innerWidth < 700, W = mob ? 340 : 600, H = 210, L = mob ? 36 : 44, B = 24, T = 8, max = Math.max(1, ...inc, ...exp), gw = (W - L) / labels.length, bw = Math.min(28, Math.max(2, gw / 2 - 2));
   const y = v => T + (H - T - B) * (1 - v / max); let g = "";
-  for (let i = 0; i <= 3; i++) { const yy = y(max * i / 3); g += `<line x1="${L}" x2="${W}" y1="${yy}" y2="${yy}" style="stroke:var(--line)"/><text x="${L - 4}" y="${yy + 3}" text-anchor="end" font-size="9" style="fill:var(--muted)">${short(max * i / 3)}</text>`; }
+  for (let i = 0; i <= 3; i++) { const yy = y(max * i / 3); g += `<line x1="${L}" x2="${W}" y1="${yy}" y2="${yy}" style="stroke:var(--line)"/><text x="${L - 4}" y="${yy + 3}" text-anchor="end" font-size="${mob ? 11 : 9}" style="fill:var(--muted)">${short(max * i / 3)}</text>`; }
   labels.forEach((lb, i) => {
     const x = L + i * gw;
     [[inc[i], "var(--inc)", 0, "Income"], [exp[i], "var(--exp)", 1, "Expenses"]].forEach(([v, c, k, nm]) => { if (v > 0) g += `<rect x="${x + gw / 2 - bw + k * bw}" y="${y(v)}" width="${bw}" height="${y(0) - y(v)}" rx="1" style="fill:${c}"><title>${esc(lb)} · ${nm}: ${inr(v)}</title></rect>`; });
-    if (i % every === 0) g += `<text x="${x + gw / 2}" y="${H - 8}" text-anchor="middle" font-size="9" style="fill:var(--muted)">${esc(lb)}</text>`;
+    if (i % (mob && labels.length > 6 ? every * 2 : every) === 0) g += `<text x="${x + gw / 2}" y="${H - 8}" text-anchor="middle" font-size="${mob ? 11 : 9}" style="fill:var(--muted)">${esc(lb)}</text>`;
   });
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Income and expenses bar chart">${g}</svg><div class="muted"><span class="inc">■</span> Income &nbsp; <span class="exp">■</span> Expenses</div>`;
 }
@@ -459,13 +479,33 @@ const prefs = { theme: "aurora" };
 try { Object.assign(prefs, JSON.parse(localStorage.getItem("prefs") || "{}")); } catch {}
 if (!THEMES[prefs.theme]) prefs.theme = "aurora";
 function applyPrefs() {
-  document.documentElement.dataset.theme = prefs.theme;
+  document.documentElement.dataset.theme = prefs.theme; document.querySelector("meta[name=theme-color]").content = { aurora: "#0a0b14", midnight: "#000000", paper: "#f3eee4", ocean: "#e9f4fb" }[prefs.theme];
   try { localStorage.setItem("prefs", JSON.stringify(prefs)); } catch {}
   $("#themeGrid").innerHTML = Object.entries(THEMES).map(([k, [n, a, b]]) => `<button type="button" data-t="${k}" aria-pressed="${prefs.theme === k}" aria-label="${n} theme"><i style="background:linear-gradient(135deg,${a},${b})"></i>${n}</button>`).join("");
 }
 $("#themeMenu").addEventListener("click", e => { const b = e.target.closest("button"); if (b && b.dataset.t) { prefs.theme = b.dataset.t; applyPrefs(); } });
 document.addEventListener("click", e => { const m = $("#themeMenu"); if (m.open && !m.contains(e.target)) m.open = false; });
 applyPrefs();
+
+/* Bottom-sheet dialog (replaces confirm/prompt, which are awkward on phones). Resolves true/false, entered text, or null. */
+function ask({ title, input, value = "", ok = "OK", danger = false }) {
+  return new Promise(res => {
+    const box = $("#sheet"), inp = $("#shInput"), yes = $("#shYes"), form = box.querySelector("form"), bg = box.querySelector(".sheet-bg");
+    $("#shTitle").textContent = title; inp.hidden = !input; inp.value = value; yes.textContent = ok; yes.classList.toggle("danger", danger); box.hidden = false;
+    (input ? inp : yes).focus(); if (input) inp.select();
+    const done = v => { box.hidden = true; form.onsubmit = bg.onclick = $("#shNo").onclick = null; res(v); };
+    $("#shNo").onclick = bg.onclick = () => done(null);
+    form.onsubmit = e => { e.preventDefault(); done(input ? inp.value.trim() || null : true); };
+  });
+}
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#sheet").hidden) $("#shNo").click(); });
+/* Install as an app (Android/Chrome prompt; iPhone shows a hint) + redraw charts when the screen rotates. */
+let deferredInstall;
+addEventListener("beforeinstallprompt", e => { e.preventDefault(); deferredInstall = e; $("#installBtn").hidden = false; });
+addEventListener("appinstalled", () => { $("#installBtn").hidden = true; });
+$("#installBtn").addEventListener("click", async () => { if (!deferredInstall) return; deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; $("#installBtn").hidden = true; });
+if (/iphone|ipad/i.test(navigator.userAgent) && !navigator.standalone) $("#iosHint").hidden = false;
+let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (loaded) renderDash(); }, 200); });
 
 /* Keyboard shortcuts: N new transaction, / search, 1-4 switch page. */
 document.addEventListener("keydown", e => {
@@ -716,6 +756,7 @@ function start() {
   });
 }
 setMode("login"); start();
+if ("serviceWorker" in navigator && location.protocol === "https:") addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 </script>
 </body>
 </html>
