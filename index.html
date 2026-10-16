@@ -1,14 +1,15 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="aurora">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Ledger – Income & Expense Tracker</title>
 <style>
-:root{--bg:#f6f5f2;--surface:#fff;--card:#fff;--text:#1b1a17;--muted:#6b675f;--line:#e7e4dd;--inc:#0a8f64;--exp:#d92d52;--warn:#b45309;--accent:#4f46e5;--onink:#fff;--ink:var(--accent);--soft:color-mix(in srgb,var(--accent) 12%,transparent);--r:16px;--sh:0 1px 2px rgba(20,18,12,.05),0 8px 24px -14px rgba(20,18,12,.14)}
-:root[data-theme=dark]{--bg:#0e0d0c;--surface:#181715;--card:#181715;--text:#f3f1ec;--muted:#a19c93;--line:#2a2825;--inc:#34d399;--exp:#fb7185;--warn:#fbbf24;--onink:#111;--sh:0 1px 2px rgba(0,0,0,.4),0 10px 28px -16px rgba(0,0,0,.8)}
-:root[data-accent=indigo]{--accent:#4f46e5}:root[data-accent=teal]{--accent:#0f766e}:root[data-accent=violet]{--accent:#7c3aed}:root[data-accent=orange]{--accent:#c2410c}:root[data-accent=slate]{--accent:#334155}
-:root[data-theme=dark][data-accent=indigo]{--accent:#818cf8}:root[data-theme=dark][data-accent=teal]{--accent:#2dd4bf}:root[data-theme=dark][data-accent=violet]{--accent:#a78bfa}:root[data-theme=dark][data-accent=orange]{--accent:#fb923c}:root[data-theme=dark][data-accent=slate]{--accent:#cbd5e1}
+:root{--r:16px;--sh:none;--glass:none;--bgimg:none;--fh:inherit;--accent2:var(--accent);--ink:var(--accent);--soft:color-mix(in srgb,var(--accent) 14%,transparent)}
+:root[data-theme=aurora]{--bg:#0a0b14;--surface:rgba(255,255,255,.055);--card:var(--surface);--pop:#14162a;--field:rgba(255,255,255,.06);--text:#eef0ff;--muted:#a3a9cf;--line:rgba(255,255,255,.1);--inc:#3be8b0;--exp:#ff6b8b;--warn:#ffc857;--accent:#8b7bff;--accent2:#2dd4ff;--onink:#0a0b14;--avl:78%;--r:20px;--sh:0 10px 40px -18px rgba(0,0,0,.8);--glass:blur(18px);--bgimg:radial-gradient(600px 400px at 12% -5%,rgba(139,123,255,.35),transparent),radial-gradient(500px 380px at 95% 10%,rgba(45,212,255,.22),transparent),radial-gradient(500px 400px at 50% 110%,rgba(255,107,139,.14),transparent)}
+:root[data-theme=midnight]{--bg:#000;--surface:#101113;--card:var(--surface);--pop:#17181b;--field:#17181b;--text:#f5f5f5;--muted:#8d8f96;--line:#23252a;--inc:#2ee6a6;--exp:#ff5d73;--warn:#ffb020;--accent:#2563eb;--accent2:#7c3aed;--onink:#fff;--avl:78%;--r:14px}
+:root[data-theme=paper]{--bg:#f3eee4;--surface:#fffdf8;--card:var(--surface);--pop:#fffdf8;--field:#f8f4ea;--text:#2b2419;--muted:#7a6f5d;--line:#e2d9c6;--inc:#16794f;--exp:#b3261e;--warn:#9a5b00;--accent:#b4432b;--accent2:#9c3a24;--onink:#fff;--avl:30%;--r:10px;--sh:0 1px 0 rgba(43,36,25,.06);--fh:Georgia,"Times New Roman",serif}
+:root[data-theme=ocean]{--bg:#e9f4fb;--surface:rgba(255,255,255,.72);--card:var(--surface);--pop:#fff;--field:rgba(255,255,255,.85);--text:#0b2540;--muted:#52708c;--line:rgba(11,37,64,.1);--inc:#0a8f64;--exp:#d12c52;--warn:#b45309;--accent:#0369a1;--accent2:#4f46e5;--onink:#fff;--avl:28%;--r:20px;--sh:0 12px 36px -20px rgba(3,105,161,.45);--glass:blur(16px);--bgimg:radial-gradient(700px 420px at 10% -10%,rgba(56,189,248,.45),transparent),radial-gradient(600px 400px at 100% 0,rgba(129,140,248,.35),transparent)}
 *{box-sizing:border-box}[hidden]{display:none!important}
 body{margin:0;min-height:100vh;color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:radial-gradient(900px 360px at 50% -140px,var(--soft),transparent) no-repeat,var(--bg)}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -68,8 +69,22 @@ table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}th,td{pa
 #toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);background:var(--text);color:var(--bg);padding:12px 18px;border-radius:14px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:50;max-width:90vw}
 #toast.show{opacity:1;transform:translate(-50%,0)}
 section:not([hidden]){animation:rise .25s ease}@keyframes rise{from{opacity:0;transform:translateY(6px)}}
+body{background:var(--bgimg) fixed no-repeat,var(--bg)}
+h1,h2,.brand{font-family:var(--fh)}
+.card,.stat{-webkit-backdrop-filter:var(--glass);backdrop-filter:var(--glass)}
+.card{transition:border-color .2s}.card:hover{border-color:color-mix(in srgb,var(--accent) 35%,var(--line))}
+input,select,.seg{background:var(--field)}
+.btn,.logo,.fab,.seg button[aria-pressed=true]{background:linear-gradient(135deg,var(--accent),var(--accent2))}
+.btn.ghost{background:transparent}
+.stat.hero{position:relative;overflow:hidden;padding-bottom:54px;background:linear-gradient(135deg,var(--accent),var(--accent2))}
+.stat.hero::after{content:"";position:absolute;right:-34px;top:-34px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.14)}
+.spark{position:absolute;left:16px;bottom:10px;width:calc(100% - 32px);height:34px;opacity:.6}
+.av{background:hsl(var(--h) 70% 55%/.18);color:hsl(var(--h) 75% var(--avl))}
+.pop{background:var(--pop)}
+.themes{display:grid;grid-template-columns:1fr 1fr;gap:8px}.themes button{display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--line);border-radius:12px;background:transparent;color:var(--text);font:inherit;cursor:pointer}
+.themes button[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 2px var(--soft)}.themes i{width:22px;height:22px;border-radius:50%;flex:none}
 @media(max-width:699px){
-  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;margin:0;gap:0;justify-content:space-around;background:var(--surface);border-top:1px solid var(--line);padding:6px 6px calc(6px + env(safe-area-inset-bottom))}
+  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;margin:0;gap:0;justify-content:space-around;background:var(--pop);border-top:1px solid var(--line);padding:6px 6px calc(6px + env(safe-area-inset-bottom))}
   .tab{flex:1;flex-direction:column;gap:3px;font-size:11px;padding:6px 2px;border-radius:12px}
   body{padding-bottom:84px}.fab{bottom:calc(92px + env(safe-area-inset-bottom))}#toast{bottom:calc(96px + env(safe-area-inset-bottom))}
   .stat.hero b{font-size:28px}
@@ -106,7 +121,7 @@ section:not([hidden]){animation:rise .25s ease}@keyframes rise{from{opacity:0;tr
       <button class="tab" data-tab="cats">Categories</button>
     </nav>
     <details class="menu" id="themeMenu"><summary class="iconbtn" id="themeIcon" aria-label="Appearance"></summary>
-      <div class="pop"><b>Appearance</b><div class="seg" id="modeSeg"></div><b>Accent colour</b><div class="dots" id="accentDots"></div></div></details>
+      <div class="pop"><b>Theme</b><div class="themes" id="themeGrid"></div><span class="muted">Shortcuts: N new · / search · 1–4 pages</span></div></details>
     <button class="iconbtn" id="logout" aria-label="Log out"></button>
   </div></header>
   <button class="fab" id="fab" aria-label="Add transaction"></button>
@@ -178,6 +193,8 @@ section:not([hidden]){animation:rise .25s ease}@keyframes rise{from{opacity:0;tr
         <button class="btn span" id="txSubmit">Add transaction</button>
         <button type="button" class="btn ghost span" id="cancelEdit" hidden>Cancel</button>
       </form>
+      <div class="field" style="margin-bottom:12px">Type<div class="seg" id="typeFilter" role="group" aria-label="Filter by type"></div></div>
+      <div class="field" style="margin-bottom:12px">Period<div class="seg" id="rangeFilter" role="group" aria-label="Filter by period"></div></div>
       <div class="field" style="max-width:460px;margin-bottom:12px">Show account<div class="seg" id="accFilterTx" role="group" aria-label="Filter by account"></div></div>
       <div class="toolbar">
         <input id="q" type="search" placeholder="Search merchant, notes or category" aria-label="Search transactions">
@@ -270,6 +287,7 @@ function renderDash() {
     ["Net savings", inr(cur.net), cur.net < 0 ? "exp" : "", "Income − expenses"],
     ["Savings rate", cur.rate === null ? "n/a" : cur.rate.toFixed(1) + "%", "", cur.rate === null ? "No income this month" : "Of income saved"],
   ].map(([l, v, c, sub]) => `<div class="stat"><small>${l}</small><b class="num ${c}">${esc(v)}</b><small>${esc(sub)}</small></div>`).join("");
+  countUp("#stats"); countUp("#balances");
   const cats = byCat(scoped), total = cats.reduce((a, [, v]) => a + v, 0);
   if (!total) { $("#donut").innerHTML = `<p class="muted">No expenses this month. Add one under Transactions to see your breakdown.</p>`; return; }
   const C = 2 * Math.PI * 40; let off = 0;
@@ -280,7 +298,7 @@ function renderDash() {
 function sorted() { return live().sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt); }
 function renderList() {
   const q = $("#q").value.trim().toLowerCase();
-  const rows = sorted().filter(t => !q || [t.merchant, t.notes, CAT[t.categoryId]].some(s => s && s.toLowerCase().includes(q))).filter(inView);
+  const rows = sorted().filter(t => !q || [t.merchant, t.notes, CAT[t.categoryId]].some(s => s && s.toLowerCase().includes(q))).filter(inView).filter(t => (!listType || t.type === listType) && inRange(t.date));
   if (!rows.length) { $("#list").innerHTML = `<li class="muted">No transactions found. Add your first one above.</li>`; $("#more").hidden = true; return; }
   let last = ""; const perDay = {}; live().filter(inView).forEach(t => (perDay[t.date] ||= []).push(t));
   $("#list").innerHTML = rows.slice(0, limit).map(t => {
@@ -435,20 +453,66 @@ document.querySelectorAll("[data-tab]").forEach(b => b.insertAdjacentHTML("after
 $("#logout").innerHTML = ico("out"); $("#themeIcon").innerHTML = ico("sun"); $("#fab").innerHTML = ico("plus");
 $("#fab").addEventListener("click", () => { document.querySelector('[data-tab="tx"]').click(); fv("amount").focus(); });
 
-/* Appearance: light / dark / system, plus an accent colour. Income green and expense red stay fixed. */
-const ACCENTS = { indigo: "#4f46e5", teal: "#0f766e", violet: "#7c3aed", orange: "#c2410c", slate: "#334155" };
-const prefs = { mode: "system", accent: "indigo" }, dmq = matchMedia("(prefers-color-scheme: dark)");
+/* Themes: four complete looks. */
+const THEMES = { aurora: ["Aurora", "#8b7bff", "#2dd4ff"], midnight: ["Midnight", "#2563eb", "#7c3aed"], paper: ["Paper", "#b4432b", "#9c3a24"], ocean: ["Ocean", "#0369a1", "#4f46e5"] };
+const prefs = { theme: "aurora" };
 try { Object.assign(prefs, JSON.parse(localStorage.getItem("prefs") || "{}")); } catch {}
+if (!THEMES[prefs.theme]) prefs.theme = "aurora";
 function applyPrefs() {
-  const r = document.documentElement; r.dataset.theme = prefs.mode === "dark" || (prefs.mode === "system" && dmq.matches) ? "dark" : "light"; r.dataset.accent = prefs.accent;
+  document.documentElement.dataset.theme = prefs.theme;
   try { localStorage.setItem("prefs", JSON.stringify(prefs)); } catch {}
-  $("#modeSeg").innerHTML = ["light", "dark", "system"].map(m => `<button type="button" data-m="${m}" aria-pressed="${prefs.mode === m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join("");
-  $("#accentDots").innerHTML = Object.entries(ACCENTS).map(([k, c]) => `<button type="button" data-a="${k}" style="--c:${c}" aria-label="${k} accent" aria-pressed="${prefs.accent === k}"></button>`).join("");
+  $("#themeGrid").innerHTML = Object.entries(THEMES).map(([k, [n, a, b]]) => `<button type="button" data-t="${k}" aria-pressed="${prefs.theme === k}" aria-label="${n} theme"><i style="background:linear-gradient(135deg,${a},${b})"></i>${n}</button>`).join("");
 }
-$("#themeMenu").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; if (b.dataset.m) prefs.mode = b.dataset.m; if (b.dataset.a) prefs.accent = b.dataset.a; applyPrefs(); });
-dmq.addEventListener("change", () => { if (prefs.mode === "system") applyPrefs(); });
+$("#themeMenu").addEventListener("click", e => { const b = e.target.closest("button"); if (b && b.dataset.t) { prefs.theme = b.dataset.t; applyPrefs(); } });
 document.addEventListener("click", e => { const m = $("#themeMenu"); if (m.open && !m.contains(e.target)) m.open = false; });
 applyPrefs();
+
+/* Keyboard shortcuts: N new transaction, / search, 1-4 switch page. */
+document.addEventListener("keydown", e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) || $("#app").hidden) return;
+  const tabs = [...document.querySelectorAll("[data-tab]")];
+  if (e.key === "n") { e.preventDefault(); $("#fab").click(); }
+  else if (e.key === "/") { e.preventDefault(); tabs[1].click(); $("#q").focus(); }
+  else if (/^[1-4]$/.test(e.key)) tabs[e.key - 1].click();
+});
+
+/* Animated numbers: amounts count from their previous value to the new one. */
+const lastNum = {};
+function countUp(box) {
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  document.querySelectorAll(`${box} .num`).forEach((el, i) => {
+    const txt = el.textContent; if (!txt.includes("₹")) return;
+    const to = Math.round(parseFloat(txt.replace(/[^0-9.\-]/g, "")) * 100), key = box + i, from = lastNum[key] ?? 0; lastNum[key] = to;
+    if (calm || from === to) return;
+    const t0 = performance.now(), step = now => { const k = Math.min(1, (now - t0) / 600); el.textContent = inr(Math.round(from + (to - from) * (1 - Math.pow(1 - k, 3)))); if (k < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  });
+}
+
+/* 30-day total-balance sparkline for the hero card. */
+const dayStr = n => { const d = new Date(); d.setDate(d.getDate() - n); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+function sparkline() {
+  const L = live().filter(t => t.type !== "transfer"), sgn = t => t.type === "income" ? t.amountMinor : -t.amountMinor, first = dayStr(29), pts = [];
+  let run = L.filter(t => t.date < first).reduce((a, t) => a + sgn(t), 0);
+  for (let i = 29; i >= 0; i--) { const d = dayStr(i); run += L.filter(t => t.date === d).reduce((a, t) => a + sgn(t), 0); pts.push(run); }
+  const lo = Math.min(...pts), span = Math.max(...pts) - lo || 1;
+  const xy = pts.map((v, i) => `${(i / 29 * 200).toFixed(1)},${(46 - (v - lo) / span * 40).toFixed(1)}`).join(" ");
+  return `<svg class="spark" viewBox="0 0 200 50" preserveAspectRatio="none" role="img" aria-label="Balance over the last 30 days"><polyline points="${xy}" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
+}
+
+/* Transaction list filters: type and period. */
+let listType = "", listRange = "";
+const inRange = d => !listRange || (listRange === "today" ? d === dayStr(0) : listRange === "7" ? d >= dayStr(6) : d.startsWith(todayStr().slice(0, 7)));
+const FILTERS = { "#typeFilter": [["", "All"], ["income", "Income"], ["expense", "Expense"], ["transfer", "Transfer"]], "#rangeFilter": [["", "All time"], ["today", "Today"], ["7", "7 days"], ["month", "This month"]] };
+function renderFilters() {
+  const cur = { "#typeFilter": listType, "#rangeFilter": listRange };
+  for (const [box, items] of Object.entries(FILTERS)) $(box).innerHTML = items.map(([v, n]) => `<button type="button" data-v="${v}" aria-pressed="${cur[box] === v}">${n}</button>`).join("");
+}
+for (const box of Object.keys(FILTERS)) $(box).addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (box === "#typeFilter") listType = b.dataset.v; else listRange = b.dataset.v;
+  limit = 50; renderFilters(); renderList();
+});
 addEventListener("online", renderSync); addEventListener("offline", renderSync);
 
 /* ---------- auth + data ---------- */
@@ -497,7 +561,7 @@ function renderAccounts(ym) {
     const bal = L.reduce((n, t) => n + (t.accountId === a.id ? (t.type === "income" ? t.amountMinor : t.type === "expense" ? -t.amountMinor : 0) : 0) + move(t), 0);
     return { name: a.name, ...s, tr: L.filter(t => t.date.startsWith(ym)).reduce((n, t) => n + move(t), 0), bal };
   });
-  $("#balances").innerHTML = `<div class="stat hero"><small>Total balance</small><b class="num">${inr(rows.reduce((a, r) => a + r.bal, 0))}</b><small>Across all accounts</small></div>` + rows.map(r => `<div class="stat"><small>${esc(r.name)} balance</small><b class="num ${r.bal < 0 ? "exp" : ""}">${inr(r.bal)}</b><small>Income − expenses ± transfers</small></div>`).join("");
+  $("#balances").innerHTML = `<div class="stat hero"><small>Total balance</small><b class="num">${inr(rows.reduce((a, r) => a + r.bal, 0))}</b><small>Across all accounts</small>${sparkline()}</div>` + rows.map(r => `<div class="stat"><small>${esc(r.name)} balance</small><b class="num ${r.bal < 0 ? "exp" : ""}">${inr(r.bal)}</b><small>Income − expenses ± transfers</small></div>`).join("");
   $("#accChart").innerHTML = barChart(rows.map(r => r.name), rows.map(r => r.inc), rows.map(r => r.exp));
   $("#accTable").innerHTML = table(["Account", "Income", "Expenses", "Net", "Transfers", "Balance"], rows.map(r => [r.name, inr(r.inc), inr(r.exp), inr(r.net), inr(r.tr), inr(r.bal)])) +
     `<p class="muted">Balance counts all income, expenses and transfers ever recorded (opening balances aren't set yet). Transfers are shown separately and are never income or expenses.</p>`;
@@ -635,7 +699,7 @@ $("#shareMonthBtn").addEventListener("click", () => {
 function start() {
   $("#fDate").value = todayStr(); $("#month").value = todayStr().slice(0, 7); $("#bMonth").value = todayStr().slice(0, 7); $("#shareDay").value = todayStr();
   seg("#segType", "#fType", [{ id: "expense", name: "Expense" }, { id: "income", name: "Income" }, { id: "transfer", name: "Transfer" }], syncForm)("expense");
-  seg("#segAcc", "#fAcc", ACCS)(ACCS[0].id); seg("#segTo", "#fTo", ACCS); syncForm(); renderAccFilters();
+  seg("#segAcc", "#fAcc", ACCS)(ACCS[0].id); seg("#segTo", "#fTo", ACCS); syncForm(); renderAccFilters(); renderFilters();
   if (!configured) { $("#auth").hidden = false; $("#setup").hidden = false; $("#authBtn").disabled = true; return; }
   const app = initializeApp(CONFIG); auth = getAuth(app);
   try { db = initializeFirestore(app, { ignoreUndefinedProperties: true, localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
