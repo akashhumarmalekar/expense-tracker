@@ -38,6 +38,8 @@ ul.list{list-style:none;margin:0;padding:0}
 .legend span:last-child{margin-left:auto}
 #sync{text-align:right;font-size:12px;color:var(--muted);margin-bottom:12px}
 .toolbar{display:flex;gap:10px;margin-bottom:12px}.toolbar input{margin:0}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}th,td{padding:6px 8px;text-align:right;border-top:1px solid var(--line);white-space:nowrap}th:first-child,td:first-child{text-align:left}th{color:var(--muted);font-weight:500;border-top:0}
+.list li.dayhead{justify-content:space-between;padding:14px 0 4px;border-top:0}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -64,6 +66,7 @@ ul.list{list-style:none;margin:0;padding:0}
     <span class="brand">Ledger</span>
     <button class="tab" data-tab="dash" aria-current="page">Dashboard</button>
     <button class="tab" data-tab="tx">Transactions</button>
+    <button class="tab" data-tab="cats">Categories</button>
     <button class="tab" id="theme" aria-label="Toggle dark mode">Theme</button>
     <button class="tab" id="logout">Log out</button>
   </div></header>
@@ -76,7 +79,21 @@ ul.list{list-style:none;margin:0;padding:0}
       <label style="max-width:200px;margin-bottom:12px">Month<input id="month" type="month"></label>
       <div class="grid" id="stats"></div>
       <div class="card"><h2>Spending by category</h2><div id="donut"></div></div>
+      <div class="card"><h2>Day by day</h2><div id="dayChart"></div><div id="dayTable"></div></div>
+      <div class="card"><h2>Last 12 months</h2><div id="monthChart"></div><div id="monthTable"></div></div>
       <p class="muted">Refunds reduce the expense they're linked to. Transfers between your accounts are excluded from income and expenses.</p>
+    </section>
+
+    <section id="cats" hidden>
+      <h1>Categories</h1>
+      <form id="catForm" class="card form">
+        <label>Name<input id="catName" maxlength="40" required autocomplete="off" placeholder="e.g. Pets"></label>
+        <label>Type<select id="catKind"><option value="expense">Expense</option><option value="income">Income</option></select></label>
+        <button class="btn" style="align-self:end">Add category</button>
+      </form>
+      <div class="card"><h2>Expense categories</h2><ul class="list" id="catExp"></ul></div>
+      <div class="card"><h2>Income categories</h2><ul class="list" id="catInc"></ul></div>
+      <p class="muted">Deleting a category hides it from new entries; past transactions keep their category. Default categories can't be changed.</p>
     </section>
 
     <section id="tx" hidden>
@@ -126,8 +143,8 @@ const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 
 const INC = ["Salary", "Freelance", "Business Income", "Investment Income", "Interest", "Gifts", "Refunds", "Other Income"];
 const EXP = ["Food & Groceries", "Transportation", "Rent & Housing", "Utilities", "Shopping", "Healthcare", "Education", "Entertainment", "Travel", "Personal Care", "Subscriptions", "Family", "Insurance", "EMI & Loan Payments", "Other Expenses"];
-const CATS = [...INC.map(n => ({ id: "inc-" + slug(n), name: n, kind: "income" })), ...EXP.map(n => ({ id: "exp-" + slug(n), name: n, kind: "expense" }))];
-const CAT = Object.fromEntries(CATS.map(c => [c.id, c.name]));
+const DEFAULT_CATS = [...INC.map(n => ({ id: "inc-" + slug(n), name: n, kind: "income" })), ...EXP.map(n => ({ id: "exp-" + slug(n), name: n, kind: "expense" }))];
+let CATS = DEFAULT_CATS, CAT = Object.fromEntries(CATS.map(c => [c.id, c.name]));
 const ACCS = [{ id: "acc-cash", name: "Cash" }, { id: "acc-savings", name: "Savings Account" }];
 const ACC = Object.fromEntries(ACCS.map(a => [a.id, a.name]));
 const COLORS = ["#0f766e", "#b45309", "#7c3aed", "#be123c", "#1d4ed8", "#4d7c0f", "#a21caf", "#475569"];
@@ -172,6 +189,7 @@ function renderDash() {
   const ym = $("#month").value; if (!ym) return;
   const cur = summarize(inMonth(ym)), [y, m] = ym.split("-").map(Number), pd = new Date(y, m - 2, 1);
   const prev = summarize(inMonth(`${pd.getFullYear()}-${pad(pd.getMonth() + 1)}`));
+  renderTrends(ym, cur);
   const delta = prev.exp > 0 ? (cur.exp - prev.exp) / prev.exp * 100 : null;
   $("#stats").innerHTML = [
     ["Income", inr(cur.inc), "inc", `${cur.n} transactions`],
@@ -191,22 +209,29 @@ function renderList() {
   const q = $("#q").value.trim().toLowerCase();
   const rows = sorted().filter(t => !q || [t.merchant, t.notes, CAT[t.categoryId]].some(s => s && s.toLowerCase().includes(q)));
   if (!rows.length) { $("#list").innerHTML = `<li class="muted">No transactions found. Add your first one above.</li>`; $("#more").hidden = true; return; }
+  let last = ""; const perDay = {}; live().forEach(t => (perDay[t.date] ||= []).push(t));
   $("#list").innerHTML = rows.slice(0, limit).map(t => {
+    let head = "";
+    if (t.date !== last) { last = t.date; const s = summarize(perDay[t.date]); head = `<li class="dayhead"><b>${new Date(t.date + "T00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</b><span class="muted num">+${inr(s.inc)} · −${inr(s.exp)}</span></li>`; }
     const title = t.merchant || (t.type === "transfer" ? "Transfer" : CAT[t.categoryId] || "Uncategorized");
     const sub = t.type === "transfer" ? `${ACC[t.accountId] || "?"} → ${ACC[t.toAccountId] || "?"}` : `${CAT[t.categoryId] || ""} · ${ACC[t.accountId] || ""}`;
     const cls = t.type === "income" ? "inc" : t.type === "expense" ? "exp" : "", sign = t.type === "income" ? "+" : t.type === "expense" ? "−" : "";
-    return `<li><div class="main"><div><b>${esc(title)}</b></div><div class="muted">${esc(t.date)} · ${esc(sub)}</div></div><b class="num ${cls}">${sign}${inr(t.amountMinor)}</b><button class="link" data-del="${esc(t.id)}" aria-label="Delete transaction">Delete</button></li>`;
+    return head + `<li><div class="main"><div><b>${esc(title)}</b></div><div class="muted">${esc(t.date)} · ${esc(sub)}</div></div><b class="num ${cls}">${sign}${inr(t.amountMinor)}</b><button class="link" data-del="${esc(t.id)}" aria-label="Delete transaction">Delete</button></li>`;
   }).join("");
   $("#more").hidden = rows.length <= limit;
 }
-const renderAll = () => { renderSync(); renderDash(); renderList(); syncRefundOptions(); };
+const renderAll = () => { renderSync(); renderCats(); renderDash(); renderList(); syncRefundOptions(); };
 
 /* ---------- form ---------- */
 const opts = (arr, sel) => arr.map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join("");
 function syncForm() {
   const type = $("#fType").value, isT = type === "transfer";
   $("#catWrap").hidden = isT; $("#toWrap").hidden = !isT; $("#accLbl").textContent = isT ? "From account" : "Account";
-  if (!isT) $("#fCat").innerHTML = `<option value="">Select…</option>` + opts(CATS.filter(c => c.kind === type));
+  if (!isT) {
+    const keep = want || $("#fCat").value;
+    $("#fCat").innerHTML = `<option value="">Select…</option>` + opts(CATS.filter(c => c.kind === type && !c.archived)) + `<option value="__new">+ New category…</option>`;
+    if ([...$("#fCat").options].some(o => o.value === keep)) { $("#fCat").value = keep; if (keep === want) want = ""; }
+  }
   syncRefundOptions();
 }
 function syncRefundOptions() {
@@ -234,7 +259,6 @@ $("#txForm").addEventListener("submit", e => {
   e.target.amount.value = ""; e.target.merchant.value = ""; e.target.notes.value = "";
 });
 $("#fType").addEventListener("change", syncForm);
-$("#fCat").addEventListener("change", syncRefundOptions);
 $("#q").addEventListener("input", () => { limit = 50; renderList(); });
 $("#more").addEventListener("click", () => { limit += 50; renderList(); });
 $("#month").addEventListener("input", renderDash);
@@ -251,10 +275,64 @@ $("#export").addEventListener("click", () => {
   a.click(); URL.revokeObjectURL(a.href);
 });
 
+/* ---------- custom categories ---------- */
+let custom = [], want = "";
+function rebuildCats() { CATS = [...DEFAULT_CATS, ...custom]; CAT = Object.fromEntries(CATS.map(c => [c.id, c.name])); }
+function addCategory(name, kind) {
+  name = name.trim().slice(0, 40); if (!name) return null;
+  if (CATS.some(c => !c.archived && c.kind === kind && c.name.toLowerCase() === name.toLowerCase())) { alert("A category with that name already exists."); return null; }
+  const now = Date.now(), id = "c-" + crypto.randomUUID();
+  setDoc(doc(db, "users", user.uid, "categories", id), { id, name, kind, archived: false, createdAt: now, updatedAt: now }).catch(e => alert("Could not save category: " + e.message));
+  return id;
+}
+function renderCats() {
+  for (const [kind, el] of [["expense", "#catExp"], ["income", "#catInc"]]) {
+    $(el).innerHTML = CATS.filter(c => c.kind === kind && !c.archived).map(c => `<li><div class="main"><b>${esc(c.name)}</b></div>` +
+      (c.id.startsWith("c-") ? `<button class="link" data-ren="${esc(c.id)}">Rename</button><button class="link" data-rm="${esc(c.id)}">Delete</button>` : `<span class="muted">Default</span>`) + `</li>`).join("") || `<li class="muted">None yet.</li>`;
+  }
+}
+$("#catForm").addEventListener("submit", e => { e.preventDefault(); const id = addCategory($("#catName").value, $("#catKind").value); if (id) $("#catName").value = ""; });
+$("#cats").addEventListener("click", e => {
+  const c = CATS.find(x => x.id === (e.target.dataset?.ren || e.target.dataset?.rm)); if (!c) return;
+  const ref = doc(db, "users", user.uid, "categories", c.id), now = Date.now();
+  if (e.target.dataset.ren) { const n = (prompt("Rename category", c.name) || "").trim().slice(0, 40); if (n && n !== c.name) setDoc(ref, { ...c, name: n, updatedAt: now }); }
+  else if (confirm(`Delete "${c.name}"? Existing transactions keep it; you just can't pick it for new ones.`)) setDoc(ref, { ...c, archived: true, updatedAt: now });
+});
+$("#fCat").addEventListener("change", e => {
+  if (e.target.value === "__new") { const id = addCategory(prompt("New category name") || "", $("#fType").value); if (id) want = id; else e.target.value = ""; return; }
+  syncRefundOptions();
+});
+
+/* ---------- daily + monthly charts ---------- */
+const short = m => { const r = m / 100; return r >= 1e7 ? (r / 1e7).toFixed(1) + "Cr" : r >= 1e5 ? (r / 1e5).toFixed(1) + "L" : r >= 1e3 ? (r / 1e3).toFixed(r >= 1e4 ? 0 : 1) + "k" : String(Math.round(r)); };
+function barChart(labels, inc, exp, every = 1) {
+  const W = 600, H = 210, L = 44, B = 24, T = 8, max = Math.max(1, ...inc, ...exp), gw = (W - L) / labels.length, bw = Math.max(2, gw / 2 - 2);
+  const y = v => T + (H - T - B) * (1 - v / max); let g = "";
+  for (let i = 0; i <= 3; i++) { const yy = y(max * i / 3); g += `<line x1="${L}" x2="${W}" y1="${yy}" y2="${yy}" style="stroke:var(--line)"/><text x="${L - 4}" y="${yy + 3}" text-anchor="end" font-size="9" style="fill:var(--muted)">${short(max * i / 3)}</text>`; }
+  labels.forEach((lb, i) => {
+    const x = L + i * gw;
+    [[inc[i], "var(--inc)", 0, "Income"], [exp[i], "var(--exp)", 1, "Expenses"]].forEach(([v, c, k, nm]) => { if (v > 0) g += `<rect x="${x + gw / 2 - bw + k * bw}" y="${y(v)}" width="${bw}" height="${y(0) - y(v)}" rx="1" style="fill:${c}"><title>${esc(lb)} · ${nm}: ${inr(v)}</title></rect>`; });
+    if (i % every === 0) g += `<text x="${x + gw / 2}" y="${H - 8}" text-anchor="middle" font-size="9" style="fill:var(--muted)">${esc(lb)}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Income and expenses bar chart">${g}</svg><div class="muted"><span class="inc">■</span> Income &nbsp; <span class="exp">■</span> Expenses</div>`;
+}
+const table = (head, rows) => rows.length ? `<div style="overflow-x:auto"><table><thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td class="num">${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : `<p class="muted">No activity in this period.</p>`;
+function renderTrends(ym, cur) {
+  const [y, m] = ym.split("-").map(Number), days = new Date(y, m, 0).getDate(), g = {};
+  inMonth(ym).forEach(t => (g[t.date] ||= []).push(t));
+  const d = Array.from({ length: days }, (_, i) => { const date = `${ym}-${pad(i + 1)}`; return { date, ...summarize(g[date] || []) }; });
+  const elapsed = ym === todayStr().slice(0, 7) ? new Date().getDate() : days;
+  $("#dayChart").innerHTML = barChart(d.map((_, i) => String(i + 1)), d.map(x => x.inc), d.map(x => x.exp), 2) + `<p class="muted">Average daily spend this month: <b class="num">${inr(Math.round(cur.exp / elapsed))}</b></p>`;
+  $("#dayTable").innerHTML = table(["Day", "Income", "Expenses", "Net"], d.filter(x => x.n).reverse().map(x => [new Date(x.date + "T00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" }), inr(x.inc), inr(x.exp), inr(x.net)]));
+  const mo = Array.from({ length: 12 }, (_, i) => { const dt = new Date(y, m - 12 + i, 1); return { label: dt.toLocaleString("en-IN", { month: "short" }) + " " + String(dt.getFullYear()).slice(2), ...summarize(inMonth(`${dt.getFullYear()}-${pad(dt.getMonth() + 1)}`)) }; });
+  $("#monthChart").innerHTML = barChart(mo.map(x => x.label), mo.map(x => x.inc), mo.map(x => x.exp));
+  $("#monthTable").innerHTML = table(["Month", "Income", "Expenses", "Net", "Saved"], mo.filter(x => x.n).reverse().map(x => [x.label, inr(x.inc), inr(x.exp), inr(x.net), x.rate === null ? "n/a" : x.rate.toFixed(0) + "%"]));
+}
+
 /* ---------- tabs, theme ---------- */
 document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll("[data-tab]").forEach(x => x.removeAttribute("aria-current")); b.setAttribute("aria-current", "page");
-  $("#dash").hidden = b.dataset.tab !== "dash"; $("#tx").hidden = b.dataset.tab !== "tx";
+  $("#dash").hidden = b.dataset.tab !== "dash"; $("#tx").hidden = b.dataset.tab !== "tx"; $("#cats").hidden = b.dataset.tab !== "cats";
 }));
 const setTheme = t => { document.documentElement.dataset.theme = t; try { localStorage.setItem("theme", t); } catch {} };
 try { const s = localStorage.getItem("theme"); document.documentElement.dataset.theme = s || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); } catch {}
@@ -291,11 +369,13 @@ function start() {
   try { db = initializeFirestore(app, { ignoreUndefinedProperties: true, localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
   catch { db = initializeFirestore(app, { ignoreUndefinedProperties: true }); } // offline cache unsupported in this browser
   onAuthStateChanged(auth, u => {
-    user = u; if (unsub) { unsub(); unsub = null; } txs = [];
+    user = u; if (unsub) { unsub(); unsub = null; } txs = []; custom = []; rebuildCats();
     $("#auth").hidden = !!u; $("#app").hidden = !u; if (!u) return;
-    unsub = onSnapshot(collection(db, "users", u.uid, "transactions"), { includeMetadataChanges: true }, snap => {
+    const u1 = onSnapshot(collection(db, "users", u.uid, "transactions"), { includeMetadataChanges: true }, snap => {
       txs = snap.docs.map(d => d.data()); pendingCount = snap.docs.filter(d => d.metadata.hasPendingWrites).length; fromCache = snap.metadata.fromCache; renderAll();
     }, err => { $("#sync").textContent = err.code === "permission-denied" ? "Permission denied. Publish the Firestore rules from the setup guide." : "Sync error: " + err.message; });
+    const u2 = onSnapshot(collection(db, "users", u.uid, "categories"), snap => { custom = snap.docs.map(d => d.data()); rebuildCats(); syncForm(); renderAll(); }, () => {});
+    unsub = () => { u1(); u2(); };
   });
 }
 setMode("login"); start();
