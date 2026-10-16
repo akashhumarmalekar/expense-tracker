@@ -16,7 +16,7 @@ header .wrap{display:flex;align-items:center;gap:8px;padding-bottom:10px;flex-wr
 .brand{font-weight:700;font-size:18px;margin-right:auto}
 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 1px 2px rgba(0,0,0,.04);margin-bottom:16px}
 h1{font-size:22px;margin:0 0 14px}h2{font-size:16px;margin:0 0 10px}
-label{display:block;font-size:13px;color:var(--muted)}
+label,.field{display:block;font-size:13px;color:var(--muted)}
 input,select{display:block;width:100%;margin-top:4px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);font:inherit}
 .btn{background:var(--ink);color:var(--onink);border:0;border-radius:10px;padding:10px 16px;font:inherit;font-weight:600;cursor:pointer;transition:opacity .15s}
 .btn:hover{opacity:.85}.btn:disabled{opacity:.5}
@@ -40,6 +40,9 @@ ul.list{list-style:none;margin:0;padding:0}
 .toolbar{display:flex;gap:10px;margin-bottom:12px}.toolbar input{margin:0}
 table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}th,td{padding:6px 8px;text-align:right;border-top:1px solid var(--line);white-space:nowrap}th:first-child,td:first-child{text-align:left}th{color:var(--muted);font-weight:500;border-top:0}
 .list li.dayhead{justify-content:space-between;padding:14px 0 4px;border-top:0}
+#toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);background:var(--ink);color:var(--onink);padding:12px 18px;border-radius:12px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.2);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:20;max-width:90vw}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+.seg{display:flex;gap:6px;margin-top:4px}.seg button{flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);font:inherit;cursor:pointer;transition:background .15s}.seg button:hover{background:var(--line)}.seg button[aria-pressed=true]{background:var(--ink);color:var(--onink);border-color:var(--ink);font-weight:600}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -99,12 +102,12 @@ table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}th,td{pa
     <section id="tx" hidden>
       <h1>Transactions</h1>
       <form id="txForm" class="card form" novalidate>
-        <label>Type<select name="type" id="fType"><option value="expense">Expense</option><option value="income">Income</option><option value="transfer">Transfer</option></select></label>
+        <div class="field">Type<input type="hidden" name="type" id="fType" value="expense"><div class="seg" id="segType" role="group" aria-label="Transaction type"></div></div>
         <label>Amount (₹)<input name="amount" inputmode="decimal" placeholder="1,250.00" autocomplete="off"></label>
         <label>Date<input name="date" type="date" id="fDate"></label>
-        <label><span id="accLbl">Account</span><select name="account" id="fAcc"></select></label>
+        <div class="field"><span id="accLbl">Account</span><input type="hidden" name="account" id="fAcc"><div class="seg" id="segAcc" role="group" aria-label="Account"></div></div>
         <label id="catWrap">Category<select name="category" id="fCat"></select></label>
-        <label id="toWrap" hidden>To account<select name="toAccount" id="fTo"></select></label>
+        <div class="field" id="toWrap" hidden>To account<input type="hidden" name="toAccount" id="fTo"><div class="seg" id="segTo" role="group" aria-label="To account"></div></div>
         <label>Merchant or source<input name="merchant" autocomplete="off"></label>
         <label id="refWrap" class="span" hidden>Refund of (optional)<select name="refundOf" id="fRef"></select></label>
         <label class="span">Notes<input name="notes" autocomplete="off"></label>
@@ -120,6 +123,8 @@ table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}th,td{pa
     </section>
   </div>
 </div>
+
+<div id="toast" role="status" aria-live="polite"></div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
@@ -241,9 +246,12 @@ function syncRefundOptions() {
     .map(t => `<option value="${esc(t.id)}">${esc(t.date)} · ${esc(t.merchant || CAT[t.categoryId] || "")} · ${inr(t.amountMinor)}</option>`).join("");
   $("#fRef").value = cur;
 }
-function save(t) { return setDoc(doc(db, "users", user.uid, "transactions", t.id), t).catch(e => { $("#txErr").textContent = e.code === "permission-denied" ? "Permission denied. Check that your Firestore rules are published." : "Could not save: " + e.message; }); }
+let toastTimer;
+function toast(msg) { const el = $("#toast"); el.textContent = msg; el.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("show"), 3000); }
+/* Resolves true when the server accepts the write, false if it is rejected. */
+function save(t) { return setDoc(doc(db, "users", user.uid, "transactions", t.id), t).then(() => true).catch(e => { $("#txErr").textContent = e.code === "permission-denied" ? "Permission denied. Check that your Firestore rules are published." : "Could not save: " + e.message; return false; }); }
 
-$("#txForm").addEventListener("submit", e => {
+$("#txForm").addEventListener("submit", async e => {
   e.preventDefault();
   const fd = Object.fromEntries(new FormData(e.target)), errs = [], amt = parseAmt(fd.amount || "");
   if (!amt) errs.push("Amount must be greater than zero (for example 1,250.50).");
@@ -255,10 +263,13 @@ $("#txForm").addEventListener("submit", e => {
   if (fd.type === "transfer") t.toAccountId = fd.toAccount; else { t.categoryId = fd.category; if (fd.type === "income" && fd.refundOf) t.refundOfId = fd.refundOf; }
   if (fd.merchant.trim()) t.merchant = fd.merchant.trim().slice(0, 120);
   if (fd.notes.trim()) t.notes = fd.notes.trim().slice(0, 500);
-  save(t); // don't await: offline writes resolve only after the server acknowledges; the UI updates from the local cache at once
-  e.target.amount.value = ""; e.target.merchant.value = ""; e.target.notes.value = "";
+  const form = e.target;
+  // Offline writes only resolve once the server acknowledges them, so wait briefly instead of forever; the entry is already saved locally.
+  const ok = await Promise.race([save(t), new Promise(r => setTimeout(r, 800, "pending"))]);
+  if (ok === false) return; // the error message is already showing and the form keeps your input
+  form.amount.value = ""; form.merchant.value = ""; form.notes.value = "";
+  toast("Transaction recorded successfully");
 });
-$("#fType").addEventListener("change", syncForm);
 $("#q").addEventListener("input", () => { limit = 50; renderList(); });
 $("#more").addEventListener("click", () => { limit += 50; renderList(); });
 $("#month").addEventListener("input", renderDash);
@@ -361,9 +372,18 @@ $("#authForm").addEventListener("submit", e => {
 $("#googleBtn").addEventListener("click", () => configured && authRun(() => signInWithPopup(auth, new GoogleAuthProvider())));
 $("#logout").addEventListener("click", () => signOut(auth));
 
+/* Button group that writes its choice into a hidden input (so FormData and the rest of the code are unchanged). Returns a setter. */
+function seg(box, hidden, items, onPick) {
+  const el = $(box), h = $(hidden);
+  el.innerHTML = items.map(i => `<button type="button" data-v="${esc(i.id)}" aria-pressed="false">${esc(i.name)}</button>`).join("");
+  const set = v => { h.value = v; el.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === v))); };
+  el.onclick = e => { const b = e.target.closest("button"); if (b) { set(b.dataset.v); if (onPick) onPick(); } };
+  return set;
+}
 function start() {
   $("#fDate").value = todayStr(); $("#month").value = todayStr().slice(0, 7);
-  $("#fAcc").innerHTML = opts(ACCS); $("#fTo").innerHTML = `<option value="">Select…</option>` + opts(ACCS); syncForm();
+  seg("#segType", "#fType", [{ id: "expense", name: "Expense" }, { id: "income", name: "Income" }, { id: "transfer", name: "Transfer" }], syncForm)("expense");
+  seg("#segAcc", "#fAcc", ACCS)(ACCS[0].id); seg("#segTo", "#fTo", ACCS); syncForm();
   if (!configured) { $("#auth").hidden = false; $("#setup").hidden = false; $("#authBtn").disabled = true; return; }
   const app = initializeApp(CONFIG); auth = getAuth(app);
   try { db = initializeFirestore(app, { ignoreUndefinedProperties: true, localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
